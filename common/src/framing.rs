@@ -80,7 +80,6 @@ impl Connection {
         let v = loop {
             let _ = self.stream.read_buf(&mut buffer).await?;
             if let Some(val) = T::deframe(&buffer)? {
-                info!("got something: {:?}", val);
                 break val;
             };
         };

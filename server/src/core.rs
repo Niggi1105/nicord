@@ -5,9 +5,9 @@ use tokio;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 
-use crate::mongodb::Command;
+use crate::mongodb::{Command, MongoConnection};
 use common::error::ServerError;
-use common::framing::{Connection, Frameable};
+use common::framing::Connection;
 use common::messages::{Request, Response};
 
 async fn create_new_server(mongo_channel: Sender<Command>, name: String) -> Result<()> {
@@ -54,12 +54,14 @@ async fn handler(stream: TcpStream, addr: SocketAddr, mongo_channel: Sender<Comm
         .unwrap();
 }
 
-pub async fn accept_new_connections(mongo_channel: Sender<Command>) -> Result<()> {
+pub async fn accept_new_connections(connection: MongoConnection) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8087").await?;
     loop {
         let (socket, addr) = listener.accept().await?;
-        let m_channel = mongo_channel.clone();
         info!("New connection from {:?}", addr);
-        tokio::task::spawn(async move { handler(socket, addr, m_channel).await });
+        let channel = connection.new_channel();
+        tokio::task::spawn(async move {
+            handler(socket, addr, channel).await;
+        });
     }
 }

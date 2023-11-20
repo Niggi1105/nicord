@@ -1,19 +1,18 @@
-use futures::TryStreamExt;
+use log::{error, info};
 use mongodb::bson::Document;
 use mongodb::error::Error;
 use mongodb::options::{self, ClientOptions, FindOptions};
-
 use mongodb::{Client, Collection};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tokio::time::error::Elapsed;
+
+use common::configs::ServerConfig;
 
 type Result<T> = std::result::Result<T, DatabaseConncectionError>;
 
-/// Enum encapsulating tokio Timeout error, in case the mongodb server doesn't
+/// Enum encapsulating tokio Timeout error, in case the mongodb server doesn'tmo
 /// respond and mongodb errors.
 #[derive(Debug)]
 pub enum DatabaseConncectionError {
@@ -39,7 +38,6 @@ pub enum Command {
 }
 
 pub struct MongoConnection {
-    client: Client,
     sender: mpsc::Sender<Command>,
 }
 
@@ -47,11 +45,8 @@ impl MongoConnection {
     pub async fn new(client_options: Option<ClientOptions>) -> Result<Self> {
         let cl = Self::connect_mongo(client_options).await?;
         let (sx, rx) = mpsc::channel(50);
-        let mut s = Self {
-            client: cl,
-            sender: sx,
-        };
-        s.listen(rx);
+        let s = Self { sender: sx };
+        Self::listen(cl, rx);
         Ok(s)
     }
 
@@ -75,12 +70,16 @@ impl MongoConnection {
         Ok(client)
     }
 
+    pub fn new_channel(&self) -> mpsc::Sender<Command> {
+        self.sender.clone()
+    }
+
     /// retrieves the first match to the given filter in the Collection
     pub async fn retrieve<'a, T>(
         collection: &Collection<T>,
         filter: Document,
         options: FindOptions,
-    ) -> Result<Option<Vec<T>>>
+    ) -> Result<Vec<T>>
     where
         T: DeserializeOwned + 'a,
     {
@@ -89,7 +88,7 @@ impl MongoConnection {
         while cursor.advance().await? {
             result.push(cursor.deserialize_current()?);
         }
-        Ok(Some(result))
+        Ok(result)
     }
 
     /// insert the data into the collection
@@ -107,15 +106,19 @@ impl MongoConnection {
                 let db = client.database(&name);
                 db.create_collection(".config", options::CreateCollectionOptions::default())
                     .await?;
-                Self::insert(&serer_configs, &db.collection(".config")).await?;
+                Self::insert(&ServerConfig::default(), &db.collection(".config")).await?;
             }
         }
         Ok(())
     }
-    fn listen(&mut self, reciever: mpsc::Receiver<Command>) -> Result<()> {
+
+    fn listen(mut client: Client, mut reciever: mpsc::Receiver<Command>) -> Result<()> {
         tokio::spawn(async move {
             if let Some(cmd) = reciever.recv().await {
-                Self::execute_cmd(&mut self.client, &cmd);
+                match Self::execute_cmd(&mut client, &cmd).await {
+                    Err(e) => error!("crittical database failure: {:?}", e),
+                    Ok(_) => {}
+                }
             }
         });
         Ok(())
