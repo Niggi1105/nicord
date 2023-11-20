@@ -1,0 +1,16 @@
+services:
+  mongo:
+    image: mongo
+    container_name: mongodb
+    restart: always
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MONGODB_REPLICA_SET_MODE=primary
+      - MONGODB_REPLICA_SET_NAME=rs0
+      - MONGODB_INITIAL_PRIMARY_HOST=localhost
+      - MONGODB_INITIAL_PRIMARY_PORT_NUMBER=27017
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./database:/data

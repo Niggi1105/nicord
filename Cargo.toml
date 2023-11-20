@@ -1,0 +1,12 @@
+[workspace]
+
+members = [
+    "server",
+    "client",
+    "common",
+    "macros",
+]
+
+exclude = [
+    "minimals",
+]
