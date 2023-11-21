@@ -1,5 +1,5 @@
 use anyhow::Result;
-use common::framing::Connection;
+use common::connection::Connection;
 use common::messages::{Request, Response};
 use std::time;
 use tokio::net::TcpStream;

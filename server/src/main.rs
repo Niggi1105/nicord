@@ -1,6 +1,5 @@
 mod core;
 mod mongodb;
-mod nc_server;
 
 use env_logger;
 use log::error;

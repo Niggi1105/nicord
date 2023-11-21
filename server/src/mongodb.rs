@@ -5,7 +5,7 @@ use mongodb::options::{self, ClientOptions, FindOptions};
 use mongodb::{Client, Collection};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::error::Elapsed;
 
 use common::configs::ServerConfig;
@@ -35,6 +35,11 @@ impl From<Elapsed> for DatabaseConncectionError {
 ///Command wraper for communication with Mmongodb connection layer through channels
 pub enum Command {
     NewServer(String),
+    GetServers(
+        oneshot::Sender<Vec<String>>,
+        Option<Document>,
+        options::ListDatabasesOptions,
+    ),
 }
 
 pub struct MongoConnection {
@@ -108,11 +113,16 @@ impl MongoConnection {
                     .await?;
                 Self::insert(&ServerConfig::default(), &db.collection(".config")).await?;
             }
+            Command::GetServers(sender, filter, options) => {
+                let databases = client
+                    .list_database_names(filter.clone(), options.clone())
+                    .await?;
+            }
         }
         Ok(())
     }
 
-    fn listen(mut client: Client, mut reciever: mpsc::Receiver<Command>) -> Result<()> {
+    fn listen(mut client: Client, mut reciever: mpsc::Receiver<Command>) {
         tokio::spawn(async move {
             if let Some(cmd) = reciever.recv().await {
                 match Self::execute_cmd(&mut client, &cmd).await {
@@ -121,6 +131,26 @@ impl MongoConnection {
                 }
             }
         });
-        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tokio::test;
+
+    #[test]
+    async fn make_connection() {
+        MongoConnection::new(None).await.unwrap();
+    }
+
+    #[test]
+    async fn new_server() {
+        let conn = MongoConnection::new(None).await.unwrap();
+        let channel = conn.new_channel();
+        channel
+            .send(Command::NewServer("MyDcServer".to_string()))
+            .await
+            .unwrap();
     }
 }

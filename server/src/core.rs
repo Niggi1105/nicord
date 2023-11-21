@@ -6,8 +6,8 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 
 use crate::mongodb::{Command, MongoConnection};
+use common::connection::Connection;
 use common::error::ServerError;
-use common::framing::Connection;
 use common::messages::{Request, Response};
 
 async fn create_new_server(mongo_channel: Sender<Command>, name: String) -> Result<()> {
@@ -32,23 +32,22 @@ async fn process_request(
     Ok(())
 }
 
-async fn fetch_request(conn: &mut Connection, _addr: SocketAddr) -> Result<Request> {
-    let request = conn.read().await?;
-    Ok(request)
-}
-
-async fn handler(stream: TcpStream, addr: SocketAddr, mongo_channel: Sender<Command>) {
-    let mut conn = Connection::new(stream);
-    let request = match fetch_request(&mut conn, addr).await {
+async fn fetch_request(conn: &mut Connection, addr: SocketAddr) -> Request {
+    match conn.read().await {
         Err(e) => {
             conn.write(Response::Error(ServerError::InternalServerError))
                 .await
                 .expect("can't write internal server error to connection");
             error!("{:?}: Can't fetch request: {:?}", addr.ip(), e);
-            panic!();
+            panic!("Request could not be fetched");
         }
         Ok(request) => request,
-    };
+    }
+}
+
+async fn handler(stream: TcpStream, addr: SocketAddr, mongo_channel: Sender<Command>) {
+    let mut conn = Connection::new(stream);
+    let request = fetch_request(&mut conn, addr).await;
     process_request(&mut conn, addr, mongo_channel, request)
         .await
         .unwrap();
