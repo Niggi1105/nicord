@@ -11,7 +11,6 @@ use common::error::ServerError;
 use common::messages::{Request, Response};
 
 async fn create_new_server(mongo_channel: Sender<Command>, name: String) -> Result<()> {
-    mongo_channel.send(Command::NewServer(name)).await?;
     Ok(())
 }
 

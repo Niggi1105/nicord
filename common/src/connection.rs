@@ -1,5 +1,5 @@
 use crate::framing::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -33,10 +33,13 @@ impl Connection {
     {
         let mut buffer = Vec::new();
         let v = loop {
-            let _ = self.stream.read_buf(&mut buffer).await?;
+            let n = self.stream.read_buf(&mut buffer).await?;
             if let Some(val) = T::deframe(&buffer)? {
                 break val;
             };
+            if n == 0 {
+                return Err(anyhow!("connection closed by client"));
+            }
         };
         Ok(v)
     }

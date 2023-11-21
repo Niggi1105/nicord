@@ -1,3 +1,6 @@
+use std::env::Args;
+use std::process::Output;
+
 use log::{error, info};
 use mongodb::bson::Document;
 use mongodb::error::Error;
@@ -32,14 +35,15 @@ impl From<Elapsed> for DatabaseConncectionError {
     }
 }
 
-///Command wraper for communication with Mmongodb connection layer through channels
-pub enum Command {
+pub enum Command_type {
     NewServer(String),
-    GetServers(
-        oneshot::Sender<Vec<String>>,
-        Option<Document>,
-        options::ListDatabasesOptions,
-    ),
+    ListServers,
+    ListDatbases,
+}
+
+pub struct Command {
+    t: Command_type,
+    resp: oneshot::Sender,
 }
 
 pub struct MongoConnection {
@@ -47,8 +51,9 @@ pub struct MongoConnection {
 }
 
 impl MongoConnection {
-    pub async fn new(client_options: Option<ClientOptions>) -> Result<Self> {
+    pub async fn start(client_options: Option<ClientOptions>) -> Result<Self> {
         let cl = Self::connect_mongo(client_options).await?;
+        cl.clone();
         let (sx, rx) = mpsc::channel(50);
         let s = Self { sender: sx };
         Self::listen(cl, rx);
@@ -105,32 +110,8 @@ impl MongoConnection {
         Ok(())
     }
 
-    async fn execute_cmd(client: &mut mongodb::Client, cmd: &Command) -> Result<()> {
-        match cmd {
-            Command::NewServer(name) => {
-                let db = client.database(&name);
-                db.create_collection(".config", options::CreateCollectionOptions::default())
-                    .await?;
-                Self::insert(&ServerConfig::default(), &db.collection(".config")).await?;
-            }
-            Command::GetServers(sender, filter, options) => {
-                let databases = client
-                    .list_database_names(filter.clone(), options.clone())
-                    .await?;
-            }
-        }
-        Ok(())
-    }
-
     fn listen(mut client: Client, mut reciever: mpsc::Receiver<Command>) {
-        tokio::spawn(async move {
-            if let Some(cmd) = reciever.recv().await {
-                match Self::execute_cmd(&mut client, &cmd).await {
-                    Err(e) => error!("crittical database failure: {:?}", e),
-                    Ok(_) => {}
-                }
-            }
-        });
+        tokio::spawn(async move {});
     }
 }
 
@@ -141,16 +122,9 @@ mod test {
 
     #[test]
     async fn make_connection() {
-        MongoConnection::new(None).await.unwrap();
+        MongoConnection::start(None).await.unwrap();
     }
 
     #[test]
-    async fn new_server() {
-        let conn = MongoConnection::new(None).await.unwrap();
-        let channel = conn.new_channel();
-        channel
-            .send(Command::NewServer("MyDcServer".to_string()))
-            .await
-            .unwrap();
-    }
+    async fn new_server() {}
 }

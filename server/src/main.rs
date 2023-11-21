@@ -11,7 +11,7 @@ async fn main() {
         .filter_level(log::LevelFilter::Info)
         .is_test(false)
         .init();
-    let connection = match mongodb::MongoConnection::new(None).await {
+    let connection = match mongodb::MongoConnection::start(None).await {
         Err(err) => {
             error!("Can't connect to mongodb {:?}", err);
             panic!();
