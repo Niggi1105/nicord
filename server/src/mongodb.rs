@@ -1,49 +1,33 @@
-use std::env::Args;
-use std::process::Output;
-
+use anyhow::Result;
 use log::{error, info};
 use mongodb::bson::Document;
 use mongodb::error::Error;
-use mongodb::options::{self, ClientOptions, FindOptions};
-use mongodb::{Client, Collection};
+use mongodb::options::{self, ClientOptions, FindOptions, ListDatabasesOptions, CollectionOptions, CreateCollectionOptions};
+use mongodb::{Client, Collection, Database};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::error::Elapsed;
 
 use common::configs::ServerConfig;
 
-type Result<T> = std::result::Result<T, DatabaseConncectionError>;
-
-/// Enum encapsulating tokio Timeout error, in case the mongodb server doesn'tmo
-/// respond and mongodb errors.
-#[derive(Debug)]
-pub enum DatabaseConncectionError {
-    MongDbError(Error),
-    ConnectionTimeOutError(Elapsed),
+pub enum CommandType {
+    NewDatabase(String),
+    ListDatbases(Option<Document>, Option<ListDatabasesOptions>),
+    NewCollection(String, Database, CreateCollectionOptions),
+    GetClient,
 }
 
-impl From<Error> for DatabaseConncectionError {
-    fn from(err: Error) -> DatabaseConncectionError {
-        DatabaseConncectionError::MongDbError(err)
-    }
-}
-
-impl From<Elapsed> for DatabaseConncectionError {
-    fn from(el: Elapsed) -> DatabaseConncectionError {
-        DatabaseConncectionError::ConnectionTimeOutError(el)
-    }
-}
-
-pub enum Command_type {
-    NewServer(String),
-    ListServers,
-    ListDatbases,
+pub enum MongoResponse {
+    Error(anyhow::Error),
+    ListDatabaseResponse(Vec<String>),
+    NewDatabaseResponse(Database),
+    CollectionResponse(Collection<Document>),
+    GetClientResponse(Client),
 }
 
 pub struct Command {
-    t: Command_type,
-    resp: oneshot::Sender,
+    tp: CommandType,
+    resp: oneshot::Sender<MongoResponse>,
 }
 
 pub struct MongoConnection {
@@ -51,20 +35,21 @@ pub struct MongoConnection {
 }
 
 impl MongoConnection {
+
+    /// connect to 
     pub async fn start(client_options: Option<ClientOptions>) -> Result<Self> {
         let cl = Self::connect_mongo(client_options).await?;
-        cl.clone();
         let (sx, rx) = mpsc::channel(50);
         let s = Self { sender: sx };
         Self::listen(cl, rx);
         Ok(s)
     }
 
-    ///trys to connect to a mongo database with the provided options, if no options
-    ///are provided default options are used and the functions looks for a localhost
-    ///instance of mongodb
+    /// trys to connect to a mongo database with the provided options, if no options
+    /// are provided default options are used and the functions looks for a localhost
+    /// instance of mongodb
     ///
-    ///the client internally uses connection pooling in order to increase performance
+    /// the client internally uses connection pooling in order to increase performance
     async fn connect_mongo(opts: Option<ClientOptions>) -> Result<Client> {
         let client_options = match opts {
             Some(opt) => opt,
@@ -110,8 +95,47 @@ impl MongoConnection {
         Ok(())
     }
 
-    fn listen(mut client: Client, mut reciever: mpsc::Receiver<Command>) {
-        tokio::spawn(async move {});
+    fn listen(client: Client, mut reciever: mpsc::Receiver<Command>) {
+        let spawn = tokio::spawn(async move {
+            let cmd = reciever.recv().await.unwrap();
+            let r = match cmd.tp {
+                CommandType::ListDatbases(filter, opt) => {
+                    let l = client.list_database_names(filter, opt).await;
+                    match l {
+                        Err(e) => {
+                            MongoResponse::Error(e.into())
+                        }
+                        Ok(val) => {
+                            MongoResponse::ListDatabaseResponse(val)
+                        }
+                    }
+                }
+                CommandType::NewDatabase(name) => {
+                    let db = client.database(&name);
+                    MongoResponse::NewDatabaseResponse(db)
+                }
+                CommandType::NewCollection(name, db, opt) => {
+                    let coll = db.create_collection(name, opt).await;
+                    match coll {
+                        Err(e) => {
+                            MongoResponse::Error(e.into())
+                        }
+                        Ok(_) => {
+                            let col = db.collection(&name);
+                            
+                            MongoResponse::CollectionResponse(col)
+                        }
+                    }
+                }
+                CommandType::GetClient => {
+                    MongoResponse::GetClientResponse(client)
+                }
+                _other => {
+                    unimplemented!()
+                }
+            };
+            cmd.resp.send(r);
+        });
     }
 }
 
