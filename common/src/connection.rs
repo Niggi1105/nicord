@@ -68,7 +68,7 @@ mod test {
                     assert_eq!(msg, "hello world".to_string());
                 }
                 _other => {
-                    assert!(false);
+                    panic!()
                 }
             };
         });

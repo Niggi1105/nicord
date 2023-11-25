@@ -1,7 +1,7 @@
 mod core;
+mod authentication;
 mod mongodb;
 
-use env_logger;
 use log::error;
 
 #[tokio::main]
@@ -11,7 +11,7 @@ async fn main() {
         .filter_level(log::LevelFilter::Info)
         .is_test(false)
         .init();
-    let connection = match mongodb::MongoConnection::start(None).await {
+    let client = match  mongodb::connect_mongo(None).await{
         Err(err) => {
             error!("Can't connect to mongodb {:?}", err);
             panic!();
@@ -19,7 +19,7 @@ async fn main() {
         Ok(cl) => cl,
     };
 
-    match core::accept_new_connections(connection).await {
+    match core::accept_new_connections(client).await {
         Ok(_) => {
             println!("no error");
         }
