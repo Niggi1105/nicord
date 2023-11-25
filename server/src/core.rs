@@ -1,47 +1,25 @@
 use anyhow::Result;
-use common::user::User;
-use log::{error, info};
-use mongodb::bson::doc;
-use mongodb::{Client, Collection};
-use std::net::{IpAddr, SocketAddr};
+use log::{error, info, warn, debug};
+use mongodb::Client;
+use std::net::IpAddr;
 use tokio::net::TcpStream;
 
 use common::error::ServerError;
-use common::messages::{Cookie, RequestType, Response};
+use common::messages::{RequestType, Response};
 
-use crate::authentication::AuthConnection;
+use crate::authentication::{signin, signup, AuthConnection};
 
 async fn create_new_server(
-    conn: &mut AuthConnection,
     addr: &IpAddr,
     auth: bool,
-    mongo_client: Client,
-    name: String,
-) -> Result<()> {
+    _mongo_client: Client,
+    _name: String,
+) -> Result<Response> {
     if !auth {
-        info!(
-            "{:?} Permission denied because of invalid authenication",
-            addr
-        );
-        conn.write(Response::Error(ServerError::PermissionDenied))
-            .await
-            .unwrap();
-        panic!("unauthenticated Server creation request")
+        warn!("{:?} Permission denied because of invalid authenication", addr);
+        return Ok(Response::Error(ServerError::PermissionDenied));
     }
-    unimplemented!()
-}
-
-async fn signup(
-    username: String,
-    password: String,
-    addr: &IpAddr,
-    conn: &mut AuthConnection,
-    mongo_client: Client,
-) -> Result<Cookie> {
-    let db = mongo_client.database("Users");
-    let coll: Collection<User> = db.collection("users");
-    let user = coll.insert_one(User::new(username, password, None), None).await?;
-    Ok(Cookie::from_string("Hallo".to_string()))
+    Ok(Response::Success)
 }
 
 async fn process_request(
@@ -51,18 +29,21 @@ async fn process_request(
     request: RequestType,
     auth: bool,
 ) -> Result<()> {
-    info!("processing RequestType...");
-    match request {
-        RequestType::Ping(txt) => conn.write(Response::Pong(txt)).await?,
-        RequestType::NewServer(name) => {
-            create_new_server(conn, addr, auth, mongo_client, name).await?;
-            conn.write(Response::Success).await?;
-        }
-        RequestType::SignUp(username, passwd) => {
-            signup(username, passwd, addr, conn, mongo_client).await?;
-        }
-        RequestType::SignIn(username, passwd) => {}
+    debug!("processing Request...");
+    let resp = match request {
+        RequestType::Ping(txt) => Ok(Response::Pong(txt)),
+        RequestType::NewServer(name) => create_new_server(addr, auth, mongo_client, name).await,
+        RequestType::SignUp(username, passwd) => signup(username, passwd, addr, mongo_client).await ,
+        RequestType::SignIn(username, passwd) => signin(username, passwd, addr, mongo_client).await ,
     };
+    conn.write( match resp {
+        Err(e) => {
+            error!("Internal Server error: {:?}", e);
+            Response::Error(ServerError::InternalServerError)
+        }
+        Ok(r) => r
+    }).await.unwrap();
+    debug!("request processing complete");
     Ok(())
 }
 

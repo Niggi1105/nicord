@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::net::IpAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use log::{info, error};
 
 #[derive(Debug)]
 pub struct Connection {
@@ -42,11 +43,13 @@ impl Connection {
                 break val;
             };
             if n == 0 {
-                return Err(anyhow!("connection closed by client"));
+                error!("connection closed by peer, while still listening");
+                return Err(anyhow!("connection closed by peer"));
             }
         };
         Ok(v)
     }
+
     pub async fn shutdown(&mut self) -> Result<()> {
         self.stream.shutdown().await?;
         Ok(())
@@ -67,8 +70,8 @@ mod test {
             let (stream, _) = listener.accept().await.unwrap();
             let mut conn = Connection::new(stream);
             let msg = conn.read::<messages::Request>().await.unwrap();
-            match msg {
-                messages::Request::Ping(msg) => {
+            match msg.tp {
+                messages::RequestType::Ping(msg) => {
                     assert_eq!(msg, "hello world".to_string());
                 }
                 _other => {
@@ -83,7 +86,7 @@ mod test {
             .await
             .unwrap();
         let mut conn = Connection::new(stream);
-        conn.write(messages::Request::Ping("hello world".to_string()))
+        conn.write(messages::Request::new(messages::RequestType::Ping("hello world".to_string()), None))
             .await
             .unwrap();
     }

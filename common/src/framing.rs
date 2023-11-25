@@ -1,5 +1,4 @@
 use anyhow::Result;
-use log::{error, info};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json;
@@ -42,5 +41,35 @@ where
         r.push_str(&l);
         r.push_str(&str);
         Ok(r.into_bytes())
+    }
+}
+
+#[cfg(test)]
+mod test{
+    use serde::Deserialize;
+
+    use super::*;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct SomeTestStruct{
+        str: String,
+        int: i32,
+        uint: u32,
+        float: f64,
+        vec: Vec<i64>,
+    }
+    impl Frameable for SomeTestStruct{}
+
+    #[test]
+    fn test_framing(){
+        let s = SomeTestStruct {str: "Hello World".to_string(), int: -42, uint: 42, float: 42.42, vec: Vec::new()};
+        let f = s.enframe().unwrap();
+        println!("{:?}", f);
+        let d = SomeTestStruct::deframe(&f).unwrap().unwrap();
+        assert_eq!(s.str, d.str);
+        assert_eq!(s.int, d.int);
+        assert_eq!(s.uint, d.uint);
+        assert_eq!(s.float, d.float);
+        assert_eq!(s.vec, d.vec);
     }
 }

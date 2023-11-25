@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use crate::error::ServerError;
 use serde::{Deserialize, Serialize};
 
@@ -7,15 +5,10 @@ use crate::framing::Frameable;
 use macros::Frame;
 
 #[derive(Serialize, Deserialize, Debug, Frame, Clone)]
-pub struct Cookie {
-    cookie: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Frame, Clone)]
 pub enum RequestType {
     Ping(String),
     NewServer(String),
-    /// Usernaem, Password
+    /// Username, Password
     SignIn(String, String),
     /// Username, Password
     SignUp(String, String),
@@ -31,45 +24,19 @@ pub enum RequestType {
 #[derive(Serialize, Deserialize, Debug, Frame)]
 pub struct Request {
     pub tp: RequestType,
-    session_cookie: Option<Cookie>,
+    pub session_cookie: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Frame)]
 pub enum Response {
     Pong(String),
     Error(ServerError),
-    SignIn(Cookie),
+    SessionCreated(String),
     Success,
 }
 
 impl Request {
-    pub fn new(tp: RequestType, session_cookie: Option<Cookie>) -> Self {
+    pub fn new(tp: RequestType, session_cookie: Option<String>) -> Self {
         Self { tp, session_cookie }
-    }
-
-    pub fn get_type_ref(&self) -> &RequestType {
-        &self.tp
-    }
-
-    pub fn get_type(&self) -> RequestType {
-        self.tp.clone()
-    }
-
-    pub fn get_cookie_ref(&self) -> &Option<Cookie> {
-        &self.session_cookie
-    }
-
-    pub fn get_cookie(&self) -> Option<Cookie> {
-        self.session_cookie.clone()
-    }
-}
-
-impl Cookie {
-    pub fn to_string(&self) -> &String {
-        &self.cookie
-    }
-
-    pub fn from_string(s: String) -> Self {
-        Self { cookie: s }
     }
 }
