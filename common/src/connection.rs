@@ -1,6 +1,7 @@
 use crate::framing::*;
 use anyhow::{anyhow, Result};
 use std::fmt::Debug;
+use std::net::IpAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -12,6 +13,9 @@ pub struct Connection {
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         Self { stream }
+    }
+    pub fn get_addr(&self) -> Result<IpAddr>{
+        Ok(self.stream.peer_addr()?.ip())
     }
     pub async fn write<'a, T>(&mut self, data: T) -> Result<()>
     where

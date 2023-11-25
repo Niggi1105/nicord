@@ -1,6 +1,6 @@
 use anyhow::Result;
 use common::connection::Connection;
-use common::messages::{Request, Response};
+use common::messages::{Request, Response, RequestType};
 use std::time;
 use tokio::net::TcpStream;
 
@@ -10,9 +10,9 @@ pub async fn connect_dc_server() -> Result<Connection> {
 }
 
 pub async fn ping(conn: &mut Connection, data: String) -> Result<u128> {
-    let ping = Request::Ping(data.clone());
+    let ping = RequestType::Ping(data.clone());
     let ts = time::Instant::now();
-    conn.write(ping).await?;
+    conn.write(Request::new(ping, None)).await?;
     let resp = conn.read().await?;
     let d = ts.elapsed().as_millis();
     match resp {
@@ -22,7 +22,9 @@ pub async fn ping(conn: &mut Connection, data: String) -> Result<u128> {
             }
         }
         Response::Error(e) => println!("serverside error: {:?}", e),
+        Response::SignIn(cookie) => {}
         Response::Success => {}
+        _other => unimplemented!()
     }
     Ok(d)
 }

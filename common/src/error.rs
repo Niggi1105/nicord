@@ -8,7 +8,7 @@ use std::fmt;
 pub enum ServerError {
     InternalServerError,
     PermissionDenied,
-    ConnectionTimeout,
+    SessionExpired
 }
 
 impl Frameable for ServerError {}

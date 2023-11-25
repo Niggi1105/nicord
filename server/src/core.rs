@@ -1,57 +1,95 @@
 use anyhow::Result;
+use common::user::User;
 use log::{error, info};
-use mongodb::Client;
-use std::net::SocketAddr;
+use mongodb::bson::doc;
+use mongodb::{Client, Collection};
+use std::net::{IpAddr, SocketAddr};
 use tokio::net::TcpStream;
 
-use common::connection::Connection;
 use common::error::ServerError;
-use common::messages::{Request, Response};
+use common::messages::{Cookie, RequestType, Response};
 
-async fn create_new_server(mongo_client: Client, name: String) -> Result<()> {
-    unimplemented!();
+use crate::authentication::AuthConnection;
+
+async fn create_new_server(
+    conn: &mut AuthConnection,
+    addr: &IpAddr,
+    auth: bool,
+    mongo_client: Client,
+    name: String,
+) -> Result<()> {
+    if !auth {
+        info!(
+            "{:?} Permission denied because of invalid authenication",
+            addr
+        );
+        conn.write(Response::Error(ServerError::PermissionDenied))
+            .await
+            .unwrap();
+        panic!("unauthenticated Server creation request")
+    }
+    unimplemented!()
+}
+
+async fn signup(
+    username: String,
+    password: String,
+    addr: &IpAddr,
+    conn: &mut AuthConnection,
+    mongo_client: Client,
+) -> Result<Cookie> {
+    let db = mongo_client.database("Users");
+    let coll: Collection<User> = db.collection("users");
+    let user = coll.insert_one(User::new(username, password, None), None).await?;
+    Ok(Cookie::from_string("Hallo".to_string()))
 }
 
 async fn process_request(
-    conn: &mut Connection,
-    addr: SocketAddr,
+    conn: &mut AuthConnection,
+    addr: &IpAddr,
     mongo_client: Client,
-    request: Request,
+    request: RequestType,
+    auth: bool,
 ) -> Result<()> {
-    info!("processing Request...");
+    info!("processing RequestType...");
     match request {
-        Request::Ping(txt) => conn.write(Response::Pong(txt)).await?,
-        Request::NewServer(name) => {
-            create_new_server(mongo_client, name).await?;
+        RequestType::Ping(txt) => conn.write(Response::Pong(txt)).await?,
+        RequestType::NewServer(name) => {
+            create_new_server(conn, addr, auth, mongo_client, name).await?;
             conn.write(Response::Success).await?;
         }
-        Request::SignUp(username, passwd ) => {
-
+        RequestType::SignUp(username, passwd) => {
+            signup(username, passwd, addr, conn, mongo_client).await?;
         }
-        Request::SignIn(username, passwd) => {
-
-        }
+        RequestType::SignIn(username, passwd) => {}
     };
     Ok(())
 }
 
-async fn fetch_request(conn: &mut Connection, addr: SocketAddr) -> Request {
-    match conn.read().await {
+async fn fetch_request(
+    conn: &mut AuthConnection,
+    mongo_client: &mut Client,
+    addr: &IpAddr,
+) -> (bool, RequestType) {
+    match conn.read_auth_req(mongo_client).await {
         Err(e) => {
+            error!(
+                "{:?}: encountered an error trying to fetch the request: {:?}",
+                addr, e
+            );
             conn.write(Response::Error(ServerError::InternalServerError))
                 .await
-                .expect("can't write internal server error to connection");
-            error!("{:?}: Can't fetch request: {:?}", addr.ip(), e);
-            panic!("Request could not be fetched");
+                .unwrap();
+            panic!()
         }
-        Ok(request) => request,
+        Ok(val) => val,
     }
 }
 
-async fn handler(stream: TcpStream, addr: SocketAddr, mongo_client: Client) {
-    let mut conn = Connection::new(stream);
-    let request = fetch_request(&mut conn, addr).await;
-    process_request(&mut conn, addr, mongo_client, request)
+async fn handler(stream: TcpStream, addr: IpAddr, mut mongo_client: Client) {
+    let mut conn = AuthConnection::new(stream);
+    let (auth, request) = fetch_request(&mut conn, &mut mongo_client, &addr).await;
+    process_request(&mut conn, &addr, mongo_client, request, auth)
         .await
         .unwrap();
 }
@@ -63,7 +101,7 @@ pub async fn accept_new_connections(mongo_client: Client) -> Result<()> {
         info!("New connection from {:?}", addr);
         let cl = mongo_client.clone();
         tokio::task::spawn(async move {
-            handler(socket, addr, cl).await;
+            handler(socket, addr.ip(), cl).await;
         });
     }
 }
