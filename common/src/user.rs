@@ -1,39 +1,16 @@
-use crate::framing::Frameable;
+use serde::{Serialize, Deserialize};
 use macros::Frame;
-use serde::{Deserialize, Serialize};
+use crate::framing::Frameable;
 
-#[derive(Serialize, Deserialize, Debug, Frame, Clone)]
-pub struct User {
+#[derive(Debug, Serialize, Deserialize, Frame)]
+pub struct User{
     username: String,
-    password: String,
-    servers: Option<Vec<String>>,
+    is_online: bool,
+    servers: Vec<String>,
 }
 
 impl User {
-    pub fn new(username: String, password: String, servers: Option<Vec<String>>) -> Self {
-        Self {
-            username,
-            password,
-            servers,
-        }
-    }
-
-    pub fn check_correct_pwd(&self, pwd: &str) -> bool {
-        self.password == pwd
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_pwd_check() {
-        let u = User {
-            username: "Bob".to_string(),
-            password: "#Passwort123".to_string(),
-            servers: None,
-        };
-        assert!(u.check_correct_pwd("#Passwort123"));
-        assert!(!u.check_correct_pwd("falsches Passwort"));
-    }
+   pub fn new(username: String, is_online: bool, servers: Vec<String>) -> Self {
+       Self { username, servers, is_online }
+   }
 }

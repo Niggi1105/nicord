@@ -1,4 +1,4 @@
-use crate::error::ServerError;
+use crate::{error::ServerError, id::ID};
 use serde::{Deserialize, Serialize};
 
 use crate::framing::Frameable;
@@ -9,9 +9,10 @@ pub enum RequestType {
     Ping(String),
     NewServer(String),
     /// Username, Password
-    SignIn(String, String),
+    SignIn(String, String, ID),
     /// Username, Password
     SignUp(String, String),
+    SignOut(ID),
     /*
     SendMessage(Message),
     GetMessages(ChannelId),
@@ -24,19 +25,19 @@ pub enum RequestType {
 #[derive(Serialize, Deserialize, Debug, Frame)]
 pub struct Request {
     pub tp: RequestType,
-    pub session_cookie: Option<String>,
+    pub session_cookie: Option<ID>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Frame)]
 pub enum Response {
     Pong(String),
     Error(ServerError),
-    SessionCreated(String),
+    SessionCreated(ID),
     Success,
 }
 
 impl Request {
-    pub fn new(tp: RequestType, session_cookie: Option<String>) -> Self {
+    pub fn new(tp: RequestType, session_cookie: Option<ID>) -> Self {
         Self { tp, session_cookie }
     }
 }

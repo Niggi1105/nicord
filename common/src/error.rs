@@ -10,6 +10,7 @@ pub enum ServerError {
     PermissionDenied,
     SessionExpired,
     InvalidCredentials,
+    BadRequest,
 }
 
 impl Frameable for ServerError {}
