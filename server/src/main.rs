@@ -8,6 +8,7 @@ use authentication::AuthHandler;
 use log::{error, info};
 use session::SessionHandler;
 use user::UserHandler;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -24,7 +25,9 @@ async fn main() {
         Ok(cl) => cl,
     };
 
-    let auth_handler = AuthHandler::new(SessionHandler::new(&client, "SESSIONS", "sessions"), UserHandler::new(&client, "USERS", "users"));
+    let ufrom_names = Arc::new(SessionHandler::from_names(&client, "SESSIONS", "sessions"));
+    let sfrom_names = Arc::new(UserHandler::from_names(&client, "USERS", "users"));
+    let auth_handler = AuthHandler::new(ufrom_names, sfrom_names);
 
     match core::accept_new_connections(client, auth_handler).await {
         Ok(_) => {

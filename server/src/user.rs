@@ -1,4 +1,5 @@
 use anyhow::Result;
+use common::error::ServerError;
 use common::user::User;
 use mongodb::bson::doc;
 use mongodb::{bson::oid::ObjectId, Client, Collection, Database};
@@ -20,6 +21,11 @@ pub struct UserHandler {
     collection: Collection<SensitiveUser>,
 }
 
+pub enum FindError<T> {
+    Ok(T),
+    Err(ServerError)
+}
+
 impl SensitiveUser {
     pub fn new(
         _id: ObjectId,
@@ -29,8 +35,7 @@ impl SensitiveUser {
         servers: Vec<String>,
     ) -> Self {
         Self {
-            _id,
-            is_online,
+            _id, is_online,
             username,
             password,
             servers,
@@ -47,7 +52,10 @@ impl SensitiveUser {
 }
 
 impl UserHandler {
-    pub fn new(client: &Client, database: &str, collection: &str) -> Self {
+    pub fn new(database: Database, collection: Collection<SensitiveUser>) -> Self{
+        Self { database, collection }
+    }
+    pub fn from_names(client: &Client, database: &str, collection: &str) -> Self {
         let db = client.database(database);
         let coll = db.collection(collection);
 
@@ -77,7 +85,7 @@ impl UserHandler {
 
     pub async fn get_user(&self, user_id: ObjectId) -> Result<Option<User>> {
         let option = self.collection.find_one(doc! {"_id": user_id}, None).await?;
-        return match option {
+        match option {
             Some(sensitive) => {
                 Ok(Some(sensitive.to_user()))
             }
@@ -100,35 +108,31 @@ impl UserHandler {
         Ok(users)
     }
 
-    ///returns true if user was modifided, else false
-    pub async fn set_user_status(&self, user_id: ObjectId, status: bool) -> Result<bool> {
-        let count = self.collection
+    ///returns true if user was modifided
+    pub async fn set_user_status(&self, user_id: ObjectId, status: bool) -> Result<()> {
+        self.collection
             .update_one(doc! {"_id": user_id}, doc! {"$set": {"is_online": status}}, None)
-            .await?.modified_count;
+            .await?;
 
-        Ok(count == 1)
+        Ok(())
     }
 
-    ///returns true if user exists, else false
-    pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<bool>{
-        let user_option = self.get_user_sensitive(user_id).await?;
-        match user_option {
-            None => Ok(false),
-            Some(mut user) => {
-                user.servers.push(name);
-                self.collection.replace_one(doc! {"_id": user_id}, user, None);
-                Ok(true)
-            }
-        }
+    ///returns true if user exists
+    pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()>{
+        let mut user = self.get_user_sensitive(user_id).await?.expect("session exists, user has to exist");
+        user.servers.push(name);
+        self.collection.replace_one(doc! {"_id": user_id}, user, None).await?;
+        Ok(())
     }
     
+    ///returns true if the user exitsts, and the credentials are correct
     pub async fn check_user_credentials(&self, user_id: ObjectId, username: String, password: String) -> Result<bool> {
         let option_user = self.collection.find_one(doc! {"_id": user_id}, None).await?;
         match option_user {
             Some(user) => {
                 Ok(user.check_credentials(&password, &username))
             }
-            None => return Ok(false)
+            None => Ok(false)
         }
     }
 

@@ -17,7 +17,6 @@ struct Session {
 pub struct SessionHandler {
     database: Database,
     collection: Collection<Session>,
-    active_sessions: u64,
 }
 
 impl Session {
@@ -45,20 +44,25 @@ impl Session {
 }
 
 impl SessionHandler {
-    pub fn new(client: &Client, database: &str, collection: &str) -> Self {
+    pub fn new(database: Database, collection: Collection<Session>) -> Self {
+        Self {
+            database,
+            collection,
+        }
+    }
+    pub fn from_names(client: &Client, database: &str, collection: &str) -> Self {
         let db = client.database(database);
         let coll = db.collection(collection);
 
         Self {
             database: db,
             collection: coll,
-            active_sessions: 0,
         }
     }
 
-    pub async fn start_session(&mut self, user_id: ObjectId) -> Result<bool> {
+    pub async fn start_session(&self, user_id: ObjectId) -> Result<()> {
         if self.check_session_active(user_id).await? {
-            return Ok(false)
+            return Ok(());
         }
 
         let session = Session::new(user_id);
@@ -68,25 +72,18 @@ impl SessionHandler {
             .await?
             .inserted_id
             .as_object_id()
-            .unwrap();
-        self.active_sessions += 1;
+            .expect("is object id");
 
-        Ok(true)
+        Ok(())
     }
 
-    pub async fn delete_session(&mut self, id: ObjectId) -> Result<bool> {
-        let count = self
-            .collection
-            .delete_one(doc! {"_id": id}, None)
-            .await?
-            .deleted_count;
-        self.active_sessions -= count;
-
-        Ok(count == 1)
+    pub async fn delete_session(&self, id: ObjectId) -> Result<()> {
+        self.collection.delete_one(doc! {"_id": id}, None).await?;
+        Ok(())
     }
 
     ///check whether session is active, expired sessions are being deleted
-    pub async fn check_session_active(&mut self, id: ObjectId) -> Result<bool> {
+    pub async fn check_session_active(&self, id: ObjectId) -> Result<bool> {
         let session = self.collection.find_one(doc! {"_id": id}, None).await?;
 
         if session.is_none() {
@@ -103,9 +100,7 @@ impl SessionHandler {
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use super::*;
     use tokio::test;
-
-
 }

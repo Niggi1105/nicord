@@ -1,4 +1,4 @@
 mod cli;
-mod sever_connection;
+mod server_connection;
 
 fn main() {}
