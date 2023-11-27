@@ -1,7 +1,6 @@
 use anyhow::Result;
-use mongodb::bson::doc;
-use mongodb::options::{ClientOptions, CreateIndexOptions, IndexOptions};
-use mongodb::{Client, IndexModel};
+use mongodb::options::ClientOptions;
+use mongodb::Client;
 
 /// trys to connect to a mongo database with the provided options, if no options
 /// are provided default options are used and the functions looks for a localhost
@@ -28,7 +27,15 @@ mod test {
     use super::*;
     use tokio::test;
     #[test]
-    async fn make_connection() {
+    async fn make_connection_wtihout_options() {
         connect_mongo(None).await.unwrap();
+    }
+    #[test]
+    async fn make_connection_wtih_options() {
+        connect_mongo(Some(ClientOptions::parse("mongodb://localhost:27017").await.unwrap())).await.unwrap();
+    }
+    #[test]
+    async fn make_connection_invalid_connection_string() {
+        connect_mongo(Some(ClientOptions::parse("mongodb://localhost:27000").await.unwrap())).await.unwrap_err();
     }
 }

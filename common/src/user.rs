@@ -4,9 +4,9 @@ use crate::framing::Frameable;
 
 #[derive(Debug, Serialize, Deserialize, Frame)]
 pub struct User{
-    username: String,
-    is_online: bool,
-    servers: Vec<String>,
+    pub username: String,
+    pub is_online: bool,
+    pub servers: Vec<String>,
 }
 
 impl User {

@@ -23,7 +23,7 @@ pub struct UserHandler {
 
 pub enum FindError<T> {
     Ok(T),
-    Err(ServerError)
+    Err(ServerError),
 }
 
 impl SensitiveUser {
@@ -35,7 +35,8 @@ impl SensitiveUser {
         servers: Vec<String>,
     ) -> Self {
         Self {
-            _id, is_online,
+            _id,
+            is_online,
             username,
             password,
             servers,
@@ -52,8 +53,11 @@ impl SensitiveUser {
 }
 
 impl UserHandler {
-    pub fn new(database: Database, collection: Collection<SensitiveUser>) -> Self{
-        Self { database, collection }
+    pub fn new(database: Database, collection: Collection<SensitiveUser>) -> Self {
+        Self {
+            database,
+            collection,
+        }
     }
     pub fn from_names(client: &Client, database: &str, collection: &str) -> Self {
         let db = client.database(database);
@@ -79,17 +83,21 @@ impl UserHandler {
         Ok(oid)
     }
 
-    async fn get_user_sensitive(&self, user_id: ObjectId) -> Result<Option<SensitiveUser>>{
-        Ok(self.collection.find_one(doc! {"_id": user_id}, None).await?)
+    async fn get_user_sensitive(&self, user_id: ObjectId) -> Result<Option<SensitiveUser>> {
+        Ok(self
+            .collection
+            .find_one(doc! {"_id": user_id}, None)
+            .await?)
     }
 
     pub async fn get_user(&self, user_id: ObjectId) -> Result<Option<User>> {
-        let option = self.collection.find_one(doc! {"_id": user_id}, None).await?;
+        let option = self
+            .collection
+            .find_one(doc! {"_id": user_id}, None)
+            .await?;
         match option {
-            Some(sensitive) => {
-                Ok(Some(sensitive.to_user()))
-            }
-            None => Ok(None)
+            Some(sensitive) => Ok(Some(sensitive.to_user())),
+            None => Ok(None),
         }
     }
 
@@ -111,38 +119,55 @@ impl UserHandler {
     ///returns true if user was modifided
     pub async fn set_user_status(&self, user_id: ObjectId, status: bool) -> Result<()> {
         self.collection
-            .update_one(doc! {"_id": user_id}, doc! {"$set": {"is_online": status}}, None)
+            .update_one(
+                doc! {"_id": user_id},
+                doc! {"$set": {"is_online": status}},
+                None,
+            )
             .await?;
 
         Ok(())
     }
 
     ///returns true if user exists
-    pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()>{
-        let mut user = self.get_user_sensitive(user_id).await?.expect("session exists, user has to exist");
+    pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()> {
+        let mut user = self
+            .get_user_sensitive(user_id)
+            .await?
+            .expect("session exists, user has to exist");
         user.servers.push(name);
-        self.collection.replace_one(doc! {"_id": user_id}, user, None).await?;
+        self.collection
+            .replace_one(doc! {"_id": user_id}, user, None)
+            .await?;
         Ok(())
     }
-    
+
     ///returns true if the user exitsts, and the credentials are correct
-    pub async fn check_user_credentials(&self, user_id: ObjectId, username: String, password: String) -> Result<bool> {
-        let option_user = self.collection.find_one(doc! {"_id": user_id}, None).await?;
+    pub async fn check_user_credentials(
+        &self,
+        user_id: ObjectId,
+        username: String,
+        password: String,
+    ) -> Result<bool> {
+        let option_user = self
+            .collection
+            .find_one(doc! {"_id": user_id}, None)
+            .await?;
         match option_user {
-            Some(user) => {
-                Ok(user.check_credentials(&password, &username))
-            }
-            None => Ok(false)
+            Some(user) => Ok(user.check_credentials(&password, &username)),
+            None => Ok(false),
         }
     }
-
 }
 
 #[cfg(test)]
 mod test {
+    use crate::mongodb::{self, connect_mongo};
+    use tokio::test;
+
     use super::*;
     #[test]
-    fn test_pwd_check() {
+    async fn test_pwd_check() {
         let u = SensitiveUser {
             _id: ObjectId::new(),
             is_online: false,
@@ -154,5 +179,231 @@ mod test {
         assert!(u.check_credentials("#Passwort123", "Bob"));
         assert!(!u.check_credentials("falsches Passwort", "Bob"));
         assert!(!u.check_credentials("#Passwort123", "Paul"));
+    }
+
+    async fn setup_test_database(client: &Client) {
+        let mut db = client.database("TEST");
+        db.drop(None).await.unwrap();
+        db = client.database("TEST");
+        let coll: Collection<SensitiveUser> = db.collection("user");
+        let mut u = SensitiveUser::new(
+            ObjectId::parse_str("123123123123123123123123").unwrap(),
+            false,
+            "Max".to_string(),
+            "Passwort".to_string(),
+            Vec::new(),
+        );
+        coll.insert_one(u, None).await.unwrap();
+        u = SensitiveUser::new(
+            ObjectId::parse_str("123123123123123123123124").unwrap(),
+            false,
+            "Moritz".to_string(),
+            "Passwort".to_string(),
+            Vec::new(),
+        );
+        coll.insert_one(u, None).await.unwrap();
+        u = SensitiveUser::new(
+            ObjectId::parse_str("123123123123123123123125").unwrap(),
+            false,
+            "Max".to_string(),
+            "Passwort123".to_string(),
+            Vec::new(),
+        );
+        coll.insert_one(u, None).await.unwrap();
+        u = SensitiveUser::new(
+            ObjectId::parse_str("123123123123123123123126").unwrap(),
+            true,
+            "Moritz".to_string(),
+            "Passwort".to_string(),
+            Vec::new(),
+        );
+        coll.insert_one(u, None).await.unwrap();
+        u = SensitiveUser::new(
+            ObjectId::parse_str("123123123123123123123127").unwrap(),
+            true,
+            "Malte".to_string(),
+            "Passwort".to_string(),
+            vec!["MyServer".to_string()],
+        );
+        coll.insert_one(u, None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_create_new_user() {
+        let client = mongodb::connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        let id = handler
+            .create_new_user("User123".to_string(), "Password123".to_string(), true)
+            .await
+            .unwrap();
+        let found = coll
+            .find_one(doc! {"_id": id}, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(found.servers == Vec::<String>::new());
+        assert!(found.username == *"User123".to_string());
+        assert!(found.password == *"Password123".to_string());
+        assert!(found.is_online);
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_get_user_sensitive() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        let u = handler
+            .get_user_sensitive(ObjectId::parse_str("123123123123123123123127").unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(u._id == ObjectId::parse_str("123123123123123123123127").unwrap());
+        assert!(u.servers == vec!["MyServer".to_string()]);
+        assert!(u.username == *"Malte".to_string());
+        assert!(u.password == *"Passwort".to_string());
+        assert!(u.is_online);
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_get_user() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        let u = handler
+            .get_user(ObjectId::parse_str("123123123123123123123127").unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(u.servers == vec!["MyServer".to_string()]);
+        assert!(u.username == *"Malte".to_string());
+        assert!(u.is_online);
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_find_user_by_name() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        let binding = handler
+            .find_user_by_name("Moritz".to_string())
+            .await
+            .unwrap();
+        let mut u = binding.iter();
+        if u.next().unwrap().is_online {
+            assert!(!u.next().unwrap().is_online)
+        } else {
+            assert!(u.next().unwrap().is_online)
+        }
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_set_user_status() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        handler
+            .set_user_status(
+                ObjectId::parse_str("123123123123123123123127").unwrap(),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(
+            !coll
+                .find_one(
+                    doc! {"_id": ObjectId::parse_str("123123123123123123123127").unwrap()},
+                    None
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .is_online
+        );
+        handler
+            .set_user_status(
+                ObjectId::parse_str("123123123123123123123127").unwrap(),
+                true,
+            )
+            .await
+            .unwrap();
+        assert!(
+            coll.find_one(
+                doc! {"_id": ObjectId::parse_str("123123123123123123123127").unwrap()},
+                None
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .is_online
+        );
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_add_user_server() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123127").unwrap();
+        handler
+            .add_user_server(oid, "MyServer2".to_string())
+            .await
+            .unwrap();
+        let u = coll
+            .find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            u.servers,
+            vec!["MyServer".to_string(), "MyServer2".to_string()]
+        );
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_check_user_credentials() {
+        let client = connect_mongo(None).await.unwrap();
+        setup_test_database(&client).await;
+        let db = client.database("TEST");
+        let coll = db.collection("user");
+        let handler = UserHandler::new(db.clone(), coll.clone());
+
+        //correct login
+        let mut oid = ObjectId::parse_str("123123123123123123123127").unwrap();
+        assert!(handler.check_user_credentials(oid, "Malte".to_string(), "Passwort".to_string()).await.unwrap());
+
+        //correct login
+        oid = ObjectId::parse_str("123123123123123123123125").unwrap();
+        assert!(handler.check_user_credentials(oid, "Max".to_string(), "Passwort123".to_string()).await.unwrap());
+
+        //password false
+        oid = ObjectId::parse_str("123123123123123123123125").unwrap();
+        assert!(!handler.check_user_credentials(oid, "Max".to_string(), "Passwort".to_string()).await.unwrap());
+
+        //username false
+        oid = ObjectId::parse_str("123123123123123123123125").unwrap();
+        assert!(!handler.check_user_credentials(oid, "Ma".to_string(), "Passwort123".to_string()).await.unwrap());
+
+        //oid false
+        oid = ObjectId::parse_str("123123123123123123123120").unwrap();
+        assert!(!handler.check_user_credentials(oid, "Max".to_string(), "Passwort123".to_string()).await.unwrap());
+        db.drop(None).await.unwrap();
     }
 }
