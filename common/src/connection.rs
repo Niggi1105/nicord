@@ -34,7 +34,7 @@ impl Connection {
 
     pub async fn read<T>(&mut self) -> Result<T>
     where
-        T: Frameable + Debug,
+        T: Frameable,
     {
         let mut buffer = Vec::new();
         let v = loop {

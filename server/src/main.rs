@@ -3,6 +3,7 @@ mod authentication;
 mod mongodb;
 mod user;
 mod session;
+mod server_handler;
 
 use authentication::AuthHandler;
 use log::{error, info};

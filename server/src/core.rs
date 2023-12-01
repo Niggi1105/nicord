@@ -8,8 +8,10 @@ use common::error::ServerError;
 use common::messages::{Request, RequestType, Response};
 
 use crate::authentication::AuthHandler;
+use crate::server_handler::ServerHandler;
 
 async fn create_new_server(mongo_client: Client, name: String) -> Result<Response> {
+    ServerHandler::new_server(&mongo_client, name, );
     Ok(Response::Success)
 }
 
