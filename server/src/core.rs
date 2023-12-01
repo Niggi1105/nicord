@@ -21,22 +21,38 @@ async fn process_request(
 ) -> Result<Response> {
     Ok(match request.tp {
         RequestType::Ping(txt) => Response::Pong(txt),
+
         RequestType::SignUp(username, password) => {
             let id = auth_handler.signup(username, password).await?;
             Response::SessionCreated(id)
         }
+
         RequestType::SignIn(username, password, id) => {
-            if auth_handler.signin_by_id(username, password, &id).await? {
+            if auth_handler
+                .signin_by_id(&username, &password, id.clone())
+                .await?
+            {
                 Response::Error(ServerError::InvalidCredentials)
             } else {
                 Response::SessionCreated(id)
             }
         }
+
         RequestType::SignOut(id) => {
             auth_handler.signout(id).await?;
             Response::Success
         }
-        RequestType::NewServer(name) => create_new_server(mongo_client, name).await?,
+
+        RequestType::NewServer(name) => match request.session_cookie {
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                if auth_handler.check_authentication(cookie).await? {
+                    create_new_server(mongo_client, name).await?
+                } else {
+                    Response::Error(ServerError::PermissionDenied)
+                }
+            }
+        },
     })
 }
 
@@ -76,6 +92,3 @@ pub async fn accept_new_connections(mongo_client: Client, auth_handler: AuthHand
         });
     }
 }
-
-
-

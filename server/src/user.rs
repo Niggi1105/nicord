@@ -1,7 +1,9 @@
 use anyhow::Result;
 use common::error::ServerError;
 use common::user::User;
+use log::debug;
 use mongodb::bson::doc;
+use mongodb::options::UpdateModifications;
 use mongodb::{bson::oid::ObjectId, Client, Collection, Database};
 use serde::{Deserialize, Serialize};
 
@@ -91,10 +93,7 @@ impl UserHandler {
     }
 
     pub async fn get_user(&self, user_id: ObjectId) -> Result<Option<User>> {
-        let option = self
-            .collection
-            .find_one(doc! {"_id": user_id}, None)
-            .await?;
+        let option = self.get_user_sensitive(user_id).await?;
         match option {
             Some(sensitive) => Ok(Some(sensitive.to_user())),
             None => Ok(None),
@@ -116,12 +115,12 @@ impl UserHandler {
         Ok(users)
     }
 
-    ///returns true if user was modifided
     pub async fn set_user_status(&self, user_id: ObjectId, status: bool) -> Result<()> {
+        let modif = UpdateModifications::Document(doc! {"is_online": status});
         self.collection
             .update_one(
                 doc! {"_id": user_id},
-                doc! {"$set": {"is_online": status}},
+                doc! {"$set": doc! {"is_online": status}},
                 None,
             )
             .await?;
@@ -129,15 +128,19 @@ impl UserHandler {
         Ok(())
     }
 
-    ///returns true if user exists
     pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()> {
-        let mut user = self
+        let mut servers = self
             .get_user_sensitive(user_id)
             .await?
-            .expect("session exists, user has to exist");
-        user.servers.push(name);
+            .expect("if session exists, user has to exist")
+            .servers;
+        servers.push(name);
         self.collection
-            .replace_one(doc! {"_id": user_id}, user, None)
+            .update_one(
+                doc! {"_id": user_id},
+                doc! {"$set": doc! {"servers": servers}},
+                None,
+            )
             .await?;
         Ok(())
     }
@@ -146,15 +149,12 @@ impl UserHandler {
     pub async fn check_user_credentials(
         &self,
         user_id: ObjectId,
-        username: String,
-        password: String,
+        username: &str,
+        password: &str,
     ) -> Result<bool> {
-        let option_user = self
-            .collection
-            .find_one(doc! {"_id": user_id}, None)
-            .await?;
-        match option_user {
-            Some(user) => Ok(user.check_credentials(&password, &username)),
+        let opt_usr = self.get_user_sensitive(user_id).await?;
+        match opt_usr {
+            Some(user) => Ok(user.check_credentials(password, username)),
             None => Ok(false),
         }
     }
@@ -387,23 +387,38 @@ mod test {
 
         //correct login
         let mut oid = ObjectId::parse_str("123123123123123123123127").unwrap();
-        assert!(handler.check_user_credentials(oid, "Malte".to_string(), "Passwort".to_string()).await.unwrap());
+        assert!(handler
+            .check_user_credentials(oid, "Malte", "Passwort")
+            .await
+            .unwrap());
 
         //correct login
         oid = ObjectId::parse_str("123123123123123123123125").unwrap();
-        assert!(handler.check_user_credentials(oid, "Max".to_string(), "Passwort123".to_string()).await.unwrap());
+        assert!(handler
+            .check_user_credentials(oid, "Max", "Passwort123")
+            .await
+            .unwrap());
 
         //password false
         oid = ObjectId::parse_str("123123123123123123123125").unwrap();
-        assert!(!handler.check_user_credentials(oid, "Max".to_string(), "Passwort".to_string()).await.unwrap());
+        assert!(!handler
+            .check_user_credentials(oid, "Max", "Passwort")
+            .await
+            .unwrap());
 
         //username false
         oid = ObjectId::parse_str("123123123123123123123125").unwrap();
-        assert!(!handler.check_user_credentials(oid, "Ma".to_string(), "Passwort123".to_string()).await.unwrap());
+        assert!(!handler
+            .check_user_credentials(oid, "Ma", "Passwort123")
+            .await
+            .unwrap());
 
         //oid false
         oid = ObjectId::parse_str("123123123123123123123120").unwrap();
-        assert!(!handler.check_user_credentials(oid, "Max".to_string(), "Passwort123".to_string()).await.unwrap());
+        assert!(!handler
+            .check_user_credentials(oid, "Max", "Passwort123")
+            .await
+            .unwrap());
         db.drop(None).await.unwrap();
     }
 }

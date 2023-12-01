@@ -5,7 +5,7 @@ use mongodb::{
     Client, Collection, Database,
 };
 use serde::{Deserialize, Serialize};
-use std::time;
+use std::time::{self, SystemTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Session {
@@ -20,6 +20,7 @@ pub struct SessionHandler {
 }
 
 impl Session {
+
     fn new(user_id: ObjectId) -> Self {
         Self {
             // we use the ID of the user as the id of the Session, this makes queries for both users
@@ -29,6 +30,7 @@ impl Session {
         }
     }
 
+    /// Session expires after 10 min
     fn is_expired(&self) -> bool {
         match self.start.elapsed() {
             Ok(val) => val.as_secs() > 600,
@@ -101,6 +103,115 @@ impl SessionHandler {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
+    use crate::mongodb::connect_mongo;
+
     use super::*;
     use tokio::test;
+    use tokio::time::sleep;
+
+    #[test]
+    async fn test_start_new_session() {
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+
+        handler.start_session(oid).await.unwrap();
+        coll.find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_start_session_with_active_session() {
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+
+        coll.insert_one(Session::new(oid), None).await.unwrap();
+        handler.start_session(oid).await.unwrap();
+        coll.find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_delete_exitsting_session() {
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+
+        coll.insert_one(Session::new(oid), None).await.unwrap();
+        assert!(coll
+            .find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .is_some());
+        handler.delete_session(oid).await.unwrap();
+        assert!(coll
+            .find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .is_none());
+
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_delete_not_exitsting_session() {
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+
+        handler.delete_session(oid).await.unwrap();
+        assert!(coll
+            .find_one(doc! {"_id": oid}, None)
+            .await
+            .unwrap()
+            .is_none());
+
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_session_active_with_active_session(){
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+
+        coll.insert_one(Session::new(oid), None).await.unwrap();
+        assert!(handler.check_session_active(oid).await.unwrap());
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_session_active_with_inactive_session(){
+        let client = connect_mongo(None).await.unwrap();
+        let db = client.database("TEST");
+        let coll: Collection<Session> = db.collection("sessions");
+        let handler = SessionHandler::new(db.clone(), coll.clone());
+        let oid = ObjectId::parse_str("123123123123123123123123").unwrap();
+        let session = Session{start: SystemTime::now().checked_sub(Duration::new(601, 0)).unwrap(), _id: oid };
+        
+        coll.insert_one(session, None).await.unwrap();
+        assert!(!handler.check_session_active(oid).await.unwrap());
+        db.drop(None).await.unwrap();
+    }
 }

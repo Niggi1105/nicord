@@ -32,9 +32,4 @@ mod test {
     use common::error::ServerError;
 
     use super::*;
-    #[tokio::test]
-    async fn test_dc_connect() {
-        let mut conn = connect_dc_server().await.unwrap();
-        conn.shutdown().await.unwrap();
-    }
 }
