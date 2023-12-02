@@ -1,5 +1,6 @@
 use anyhow::Result;
 use common::connection::Connection;
+use common::id::ID;
 use log::{debug, error, info, warn};
 use mongodb::Client;
 use tokio::net::TcpStream;
@@ -10,9 +11,9 @@ use common::messages::{Request, RequestType, Response};
 use crate::authentication::AuthHandler;
 use crate::server_handler::ServerHandler;
 
-async fn create_new_server(mongo_client: Client, name: String) -> Result<Response> {
-    ServerHandler::new_server(&mongo_client, name, );
-    Ok(Response::Success)
+async fn create_new_server(mongo_client: Client, name: String, user_id: ID) -> Result<Response> {
+    let id = ServerHandler::new_server(&mongo_client, name, user_id).await?;
+    Ok(Response::ServerCreated(id))
 }
 
 ///does server intern request processing of the request and returns an appropriate response
@@ -48,13 +49,14 @@ async fn process_request(
         RequestType::NewServer(name) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                if auth_handler.check_authentication(cookie).await? {
-                    create_new_server(mongo_client, name).await?
+                if auth_handler.check_authentication(cookie.clone()).await? {
+                    create_new_server(mongo_client, name, cookie).await?
                 } else {
                     Response::Error(ServerError::PermissionDenied)
                 }
             }
         },
+
     })
 }
 

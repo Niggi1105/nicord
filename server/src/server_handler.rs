@@ -1,3 +1,4 @@
+use common::id::ID;
 use mongodb::{
     bson::{doc, oid::ObjectId},
     Client, Database,
@@ -37,14 +38,15 @@ impl ServerHandler {
         Self { server }
     }
 
-    pub async fn new_server(client: &Client, name: String, creator: ObjectId) -> Result<Self> {
+    pub async fn new_server(client: &Client, name: String, creator: ID) -> Result<ID> {
         let id = ObjectId::new().to_hex();
         let db = client.database(&id);
         let coll = db.collection(".config");
-        let conf = ServerConfig::new(name, creator);
-        coll.insert_one(conf, None).await?;
+        let oid = ObjectId::parse_str(creator.id).expect("invalid ID provided");
+        let conf = ServerConfig::new(name, oid);
 
-        Ok(Self { server: db })
+        coll.insert_one(conf, None).await?;
+        Ok(ID::new(id).expect("is an object id"))
     }
 
     pub async fn delete_server(self) -> Result<()> {

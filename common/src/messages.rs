@@ -7,12 +7,12 @@ use macros::Frame;
 #[derive(Serialize, Deserialize, Debug, Frame, Clone)]
 pub enum RequestType {
     Ping(String),
-    NewServer(String),
     /// Username, Password
     SignIn(String, String, ID),
     /// Username, Password
     SignUp(String, String),
     SignOut(ID),
+    NewServer(String),
     /*
     SendMessage(Message),
     GetMessages(ChannelId),
@@ -33,6 +33,7 @@ pub enum Response {
     Pong(String),
     Error(ServerError),
     SessionCreated(ID),
+    ServerCreated(ID),
     Success,
 }
 
