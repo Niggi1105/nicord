@@ -1,10 +1,10 @@
+use anyhow::Result;
 use common::id::ID;
 use mongodb::{
     bson::{doc, oid::ObjectId},
-    Client, Database,
+    Client, Collection, Database,
 };
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 
 #[derive(Default, Serialize, Deserialize)]
 struct ServerConfig {
@@ -14,9 +14,7 @@ struct ServerConfig {
 }
 
 /// a clean abstraction for the core server functionalities
-pub struct ServerHandler {
-    server: Database,
-}
+pub struct ServerHandler;
 
 impl ServerConfig {
     fn new(name: String, creator: ObjectId) -> Self {
@@ -34,10 +32,6 @@ impl ServerConfig {
 }
 
 impl ServerHandler {
-    pub fn new(server: Database) -> Self {
-        Self { server }
-    }
-
     pub async fn new_server(client: &Client, name: String, creator: ID) -> Result<ID> {
         let id = ObjectId::new().to_hex();
         let db = client.database(&id);
@@ -49,7 +43,24 @@ impl ServerHandler {
         Ok(ID::new(id).expect("is an object id"))
     }
 
-    pub async fn delete_server(self) -> Result<()> {
-        Ok(self.server.drop(None).await?)
+    pub async fn delete_server(client: &Client, server_id: ID, user_id: ID) -> Result<bool> {
+        let hex_id = ObjectId::parse_str(server_id.id)
+            .expect("is an oid")
+            .to_hex();
+        let db = client.database(&hex_id);
+        let coll: Collection<ServerConfig> = db.collection(".config");
+        let conf = coll
+            .find_one(doc! {}, None)
+            .await?
+            .expect("Server has no config");
+        let user_oid = &ObjectId::parse_str(user_id.id).expect("is oid");
+
+        for admin in conf.admins.iter() {
+            if admin == user_oid {
+                db.drop(None).await?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

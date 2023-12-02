@@ -57,6 +57,20 @@ async fn process_request(
             }
         },
 
+        RequestType::DeleteServer(id) => match request.session_cookie {
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                if auth_handler.check_authentication(cookie.clone()).await? {
+                    if ServerHandler::delete_server(&mongo_client, id, cookie).await? {
+                        Response::Success
+                    } else {
+                        Response::Error(ServerError::PermissionDenied)
+                    }
+                } else {
+                    Response::Error(ServerError::PermissionDenied)
+                }
+            }
+        },
     })
 }
 
