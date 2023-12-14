@@ -8,69 +8,50 @@ use tokio::net::TcpStream;
 use common::error::ServerError;
 use common::messages::{Request, RequestType, Response};
 
-use crate::authentication::AuthHandler;
-use crate::server_handler::ServerHandler;
+use crate::handler::Handler;
 
-async fn create_new_server(mongo_client: Client, name: String, user_id: ID) -> Result<Response> {
-    let id = ServerHandler::new_server(&mongo_client, name, user_id).await?;
-    Ok(Response::ServerCreated(id))
-}
-
-///does server intern request processing of the request and returns an appropriate response
+///does server intern processing of the request and returns an appropriate response
 async fn process_request(
     mongo_client: Client,
     request: Request,
-    auth_handler: AuthHandler,
+    handler: Handler,
 ) -> Result<Response> {
     Ok(match request.tp {
         RequestType::Ping(txt) => Response::Pong(txt),
 
         RequestType::SignUp(username, password) => {
-            let id = auth_handler.signup(username, password).await?;
-            Response::SessionCreated(id)
+            handler.signup(username, password).await?
         }
 
         RequestType::SignIn(username, password, id) => {
-            if auth_handler
-                .signin_by_id(&username, &password, id.clone())
-                .await?
-            {
-                Response::Error(ServerError::InvalidCredentials)
-            } else {
-                Response::SessionCreated(id)
-            }
+            handler.signin_by_id(&username, &password, id.clone()).await?
         }
 
-        RequestType::SignOut(id) => {
-            auth_handler.signout(id).await?;
-            Response::Success
+        RequestType::SignOut() => match request.session_cookie{
+            None => Response::Error(ServerError::BadRequest),
+            Some(cookie) => handler.signout(cookie).await?
         }
 
         RequestType::NewServer(name) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                if auth_handler.check_authentication(cookie.clone()).await? {
-                    create_new_server(mongo_client, name, cookie).await?
-                } else {
-                    Response::Error(ServerError::PermissionDenied)
-                }
+                handler.create_new_server(&mongo_client, cookie, name).await?
             }
         },
 
-        RequestType::DeleteServer(id) => match request.session_cookie {
+        RequestType::DeleteServer() => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                if auth_handler.check_authentication(cookie.clone()).await? {
-                    if ServerHandler::delete_server(&mongo_client, id, cookie).await? {
-                        Response::Success
-                    } else {
-                        Response::Error(ServerError::PermissionDenied)
-                    }
-                } else {
-                    Response::Error(ServerError::PermissionDenied)
-                }
+                handler.delete_server(&mongo_client, cookie).await?
             }
         },
+
+        RequestType::NewChannel(name) => match request.session_cookie {
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                handler.new_channel(&mongo_client, cookie, name).await?
+            }
+        }
     })
 }
 
@@ -89,24 +70,24 @@ async fn fetch_request(conn: &mut Connection) -> Request {
 }
 
 /// creates new connection from Stream and does all opperations on it
-async fn handler(stream: TcpStream, mongo_client: Client, auth_handler: AuthHandler) {
+async fn handler_fn(stream: TcpStream, mongo_client: Client, handler: Handler) {
     let mut conn = Connection::new(stream);
     let request = fetch_request(&mut conn).await;
-    let response = process_request(mongo_client, request, auth_handler)
+    let response = process_request(mongo_client, request, handler)
         .await
         .unwrap_or(Response::Error(ServerError::InternalServerError));
     conn.write(response).await.unwrap();
 }
 
-pub async fn accept_new_connections(mongo_client: Client, auth_handler: AuthHandler) -> Result<()> {
+pub async fn accept_new_connections(mongo_client: Client, handler: Handler) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8087").await?;
     loop {
         let (socket, addr) = listener.accept().await?;
         info!("New connection from {:?}", addr);
         let cl = mongo_client.clone();
-        let ah = auth_handler.clone();
+        let ah = handler.clone();
         tokio::task::spawn(async move {
-            handler(socket, cl, ah).await;
+            handler_fn(socket, cl, ah).await;
         });
     }
 }

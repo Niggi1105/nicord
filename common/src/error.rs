@@ -15,6 +15,17 @@ pub enum ServerError {
 
 impl Frameable for ServerError {}
 
+impl Error for ServerError{
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+impl fmt::Display for ServerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "internal Server Error")
+    }
+}
+
 #[derive(Debug)]
 pub enum FramingError {
     FromUtf8Error(std::string::FromUtf8Error),

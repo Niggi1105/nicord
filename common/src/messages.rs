@@ -11,14 +11,14 @@ pub enum RequestType {
     SignIn(String, String, ID),
     /// Username, Password
     SignUp(String, String),
-    SignOut(ID),
+    SignOut(),
     NewServer(String),
-    DeleteServer(ID),
+    DeleteServer(),
+    NewChannel(String),
     /*
     SendMessage(Message),
     GetMessages(ChannelId),
     GetChannels(ServerId),
-    NewChannel(ServerId, String),
     GetFriends,
     AddFriend(UserId),*/
 }
@@ -36,6 +36,15 @@ pub enum Response {
     SessionCreated(ID),
     ServerCreated(ID),
     Success,
+}
+
+impl Response {
+    pub fn succeeded(&self) -> bool {
+        match self {
+            Response::Success => true,
+            _other => false,
+        }
+    }
 }
 
 impl Request {

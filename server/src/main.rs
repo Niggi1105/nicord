@@ -1,15 +1,14 @@
 mod core;
-mod authentication;
 mod mongodb;
 mod user;
 mod session;
 mod server_handler;
+mod handler;
 
-use authentication::AuthHandler;
+use handler::Handler;
 use log::{error, info};
 use session::SessionHandler;
 use user::UserHandler;
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -26,9 +25,9 @@ async fn main() {
         Ok(cl) => cl,
     };
 
-    let ufrom_names = Arc::new(SessionHandler::from_names(&client, "SESSIONS", "sessions"));
-    let sfrom_names = Arc::new(UserHandler::from_names(&client, "USERS", "users"));
-    let auth_handler = AuthHandler::new(ufrom_names, sfrom_names);
+    let ufrom_names = SessionHandler::from_names(&client, "SESSIONS", "sessions");
+    let sfrom_names = UserHandler::from_names(&client, "USERS", "users");
+    let auth_handler = Handler::new(ufrom_names, sfrom_names);
 
     match core::accept_new_connections(client, auth_handler).await {
         Ok(_) => {
