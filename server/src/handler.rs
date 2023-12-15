@@ -1,8 +1,8 @@
 use anyhow::Result;
-use common::{id::ID, messages::Response};
+use common::{id::ID, messages::Response, error::ServerError};
 use mongodb::{bson::oid::ObjectId, Client};
 
-use crate::{session::SessionHandler, user::UserHandler, server_handler};
+use crate::{session::SessionHandler, user::UserHandler, server_handler::{self, ServerHandler}};
 
 #[derive(Clone)]
 pub struct Handler {
@@ -54,34 +54,37 @@ impl Handler {
         Ok(Response::Success)
     }
 
-    async fn check_authentication(&self, cookie: ID) -> Result<bool> {
-        let oid = ObjectId::parse_str(cookie.id)?;
+    async fn is_authenticated(&self, user_id: ID) -> Result<bool> {
+        let oid = ObjectId::parse_str(user_id.id)?;
         Ok(self.session_handler.check_session_active(oid).await?.succeeded())
     }
 
-    pub async fn create_new_server(&self, mongo_client: &Client, cookie: ID, name: String) -> Result<Response> {
-
-        let oid = ObjectId::parse_str(cookie.id).expect("is oid");
-        let server_handler_opt = self.session_handler.get_server_handler(oid).await?; 
-
-        //is none if the session doesn't exist
-        if server_handler_opt.is_none() {
-            return Ok(Response::Error(common::error::ServerError::SessionExpired));
+    pub async fn create_new_server(&self, mongo_client: &Client, user_id: ID, name: String) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id)?;
+            return self.session_handler.check_session_active(oid).await;
         }
-        let server_handler = server_handler_opt.expect("checked above");
-
-        server_handler.new_server(mongo_client, name.clone()).await?;
-        self.user_handler.add_user_server(oid, name).await?;
-
+        ServerHandler::new_server(user_id, mongo_client, name).await?;
         Ok(Response::Success)
     }
 
-    pub async fn delete_server(&self, mongo_client: &Client, cookie: ID) -> Result<Response> {
-        unimplemented!()
+    pub async fn delete_server(&self, mongo_client: &Client, user_id: ID, server_id: ID) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id)?;
+            return self.session_handler.check_session_active(oid).await;
+        }
+        //delete the server database
+        let resp = ServerHandler::delete_server(user_id, mongo_client, server_id).await?;
+
+        Ok(resp)
     }
 
-    pub async fn new_channel(&self, mongo_client: &Client, cookie: ID, name: String) -> Result<Response> {
-        unimplemented!()
+    pub async fn new_channel(&self, mongo_client: &Client, user_id: ID, name: String, server_id: ID) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id)?;
+            return self.session_handler.check_session_active(oid).await;
+        }
+        ServerHandler::new_channel(user_id, mongo_client, name, server_id).await
     }
 }
 

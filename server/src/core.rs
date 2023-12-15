@@ -39,17 +39,17 @@ async fn process_request(
             }
         },
 
-        RequestType::DeleteServer() => match request.session_cookie {
+        RequestType::DeleteServer(server_id) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                handler.delete_server(&mongo_client, cookie).await?
+                handler.delete_server(&mongo_client, cookie, server_id).await?
             }
         },
 
-        RequestType::NewChannel(name) => match request.session_cookie {
+        RequestType::NewChannel(server_id, name) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                handler.new_channel(&mongo_client, cookie, name).await?
+                handler.new_channel(&mongo_client, cookie, name, server_id).await?
             }
         }
     })

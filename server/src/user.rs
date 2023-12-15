@@ -14,7 +14,6 @@ struct SensitiveUser {
     is_online: bool,
     username: String,
     password: String,
-    servers: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -41,7 +40,6 @@ impl SensitiveUser {
             is_online,
             username,
             password,
-            servers,
         }
     }
 
@@ -50,7 +48,7 @@ impl SensitiveUser {
     }
 
     fn to_user(&self) -> User {
-        User::new(self.username.clone(), self.is_online, self.servers.clone())
+        User::new(self.username.clone(), self.is_online)
     }
 }
 
@@ -130,25 +128,6 @@ impl UserHandler {
         Ok(())
     }
 
-    ///should only be called after checking whether a session exists, panics if user doesn't exist
-    ///in db
-    pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()> {
-        let mut servers = self
-            .get_user_sensitive(user_id)
-            .await?
-            .expect("if session exists, user has to exist")
-            .servers;
-        servers.push(name);
-        self.collection
-            .update_one(
-                doc! {"_id": user_id},
-                doc! {"$set": doc! {"servers": servers}},
-                None,
-            )
-            .await?;
-        Ok(())
-    }
-
     ///returns true if the user exitsts, and the credentials are correct
     pub async fn check_user_credentials(
         &self,
@@ -177,7 +156,6 @@ mod test {
             is_online: false,
             username: "Bob".to_string(),
             password: "#Passwort123".to_string(),
-            servers: Vec::new(),
         };
 
         assert!(u.check_credentials("#Passwort123", "Bob"));
@@ -247,7 +225,6 @@ mod test {
             .await
             .unwrap()
             .unwrap();
-        assert!(found.servers == Vec::<String>::new());
         assert!(found.username == *"User123".to_string());
         assert!(found.password == *"Password123".to_string());
         assert!(found.is_online);
@@ -267,7 +244,6 @@ mod test {
             .unwrap()
             .unwrap();
         assert!(u._id == ObjectId::parse_str("123123123123123123123127").unwrap());
-        assert!(u.servers == vec!["MyServer".to_string()]);
         assert!(u.username == *"Malte".to_string());
         assert!(u.password == *"Passwort".to_string());
         assert!(u.is_online);
@@ -286,7 +262,6 @@ mod test {
             .await
             .unwrap()
             .unwrap();
-        assert!(u.servers == vec!["MyServer".to_string()]);
         assert!(u.username == *"Malte".to_string());
         assert!(u.is_online);
         db.drop(None).await.unwrap();
@@ -353,30 +328,6 @@ mod test {
             .unwrap()
             .unwrap()
             .is_online
-        );
-        db.drop(None).await.unwrap();
-    }
-
-    #[test]
-    async fn test_add_user_server() {
-        let client = connect_mongo(None).await.unwrap();
-        setup_test_database(&client).await;
-        let db = client.database("TEST");
-        let coll = db.collection("user");
-        let handler = UserHandler::new(db.clone(), coll.clone());
-        let oid = ObjectId::parse_str("123123123123123123123127").unwrap();
-        handler
-            .add_user_server(oid, "MyServer2".to_string())
-            .await
-            .unwrap();
-        let u = coll
-            .find_one(doc! {"_id": oid}, None)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            u.servers,
-            vec!["MyServer".to_string(), "MyServer2".to_string()]
         );
         db.drop(None).await.unwrap();
     }

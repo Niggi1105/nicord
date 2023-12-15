@@ -13,8 +13,8 @@ pub enum RequestType {
     SignUp(String, String),
     SignOut(),
     NewServer(String),
-    DeleteServer(),
-    NewChannel(String),
+    DeleteServer(ID),
+    NewChannel(ID, String),
     /*
     SendMessage(Message),
     GetMessages(ChannelId),

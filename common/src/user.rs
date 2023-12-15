@@ -6,11 +6,10 @@ use crate::framing::Frameable;
 pub struct User{
     pub username: String,
     pub is_online: bool,
-    pub servers: Vec<String>,
 }
 
 impl User {
-   pub fn new(username: String, is_online: bool, servers: Vec<String>) -> Self {
-       Self { username, servers, is_online }
+   pub fn new(username: String, is_online: bool) -> Self {
+       Self { username,  is_online }
    }
 }

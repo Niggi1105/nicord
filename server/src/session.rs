@@ -14,7 +14,6 @@ use crate::server_handler::ServerHandler;
 struct Session {
     _id: ObjectId,
     start: time::SystemTime,
-    server_handler: ServerHandler,
 }
 
 #[derive(Clone)]
@@ -31,7 +30,6 @@ impl Session {
             // and sessions easier as we can simply use the cookie provided in the request
             _id: user_id,
             start: time::SystemTime::now(),
-            server_handler: ServerHandler::new(ID::new(user_id.to_hex()).expect("is an oid")),
         }
     }
 
@@ -108,38 +106,6 @@ impl SessionHandler {
         }
 
         Ok(Response::Success)
-    }
-
-    ///trys to get the server handler for a given session, if the session doesn't exist None is
-    ///returned
-    pub async fn get_server_handler(&self, id: ObjectId) -> Result<Option<ServerHandler>> {
-        let session = self.collection.find_one(doc! {"_id": id}, None).await?;
-        if session.is_none(){
-            return Ok(None);
-        }
-        Ok(Some(session.expect("checked above").server_handler))
-    }
-
-    ///tries to update the  serverhandler in the session db
-    pub async fn update_server_handler(&self, id: ObjectId, new_server_handler: ServerHandler) -> Result<bool> {
-        let session = self.collection.find_one(
-            doc! {"_id": id}, 
-            None
-            ).await?;
-
-        if session.is_none(){
-            return Ok(false);
-        }
-
-        let mut s = session.expect("checked for None");
-        s.server_handler = new_server_handler;
-
-        self.collection.find_one_and_replace(
-            doc! {"_id": id}, 
-            s,
-            None
-            ).await?;
-        Ok(true)
     }
 }
 
@@ -255,7 +221,6 @@ mod test {
                 .checked_sub(Duration::new(601, 0))
                 .unwrap(),
             _id: oid,
-            server_handler: ServerHandler::new(ID::new(oid.to_hex()).unwrap())
         };
 
         coll.insert_one(session, None).await.unwrap();
