@@ -61,12 +61,17 @@ impl Handler {
 
     pub async fn create_new_server(&self, mongo_client: &Client, cookie: ID, name: String) -> Result<Response> {
 
-        unimplemented!("todo");
-        let server_handler_opt = self.session_handler.get_server_handler(ObjectId::parse_str(cookie.id).expect("is oid")).await?; 
+        let oid = ObjectId::parse_str(cookie.id).expect("is oid");
+        let server_handler_opt = self.session_handler.get_server_handler(oid).await?; 
+
+        //is none if the session doesn't exist
         if server_handler_opt.is_none() {
             return Ok(Response::Error(common::error::ServerError::SessionExpired));
         }
-        let mut server_handler = server_handler_opt.expect("checked above");
+        let server_handler = server_handler_opt.expect("checked above");
+
+        server_handler.new_server(mongo_client, name.clone()).await?;
+        self.user_handler.add_user_server(oid, name).await?;
 
         Ok(Response::Success)
     }

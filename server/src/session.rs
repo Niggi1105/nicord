@@ -57,6 +57,8 @@ impl SessionHandler {
             collection,
         }
     }
+
+    ///creates a new Sessionhandler from the database and collection names
     pub fn from_names(client: &Client, database: &str, collection: &str) -> Self {
         let db = client.database(database);
         let coll = db.collection(collection);
@@ -67,6 +69,8 @@ impl SessionHandler {
         }
     }
 
+    ///creates a new session and inserts it into the session db, if the session already exists no
+    ///new session is created
     pub async fn start_session(&self, user_id: ObjectId) -> Result<Response> {
         if self.check_session_active(user_id).await?.succeeded() {
             return Ok(Response::Success);
@@ -84,6 +88,7 @@ impl SessionHandler {
         Ok(Response::Success)
     }
 
+    ///delete the session entry from the session db
     pub async fn end_session(&self, id: ObjectId) -> Result<()> {
         self.collection.delete_one(doc! {"_id": id}, None).await?;
         Ok(())
@@ -105,6 +110,8 @@ impl SessionHandler {
         Ok(Response::Success)
     }
 
+    ///trys to get the server handler for a given session, if the session doesn't exist None is
+    ///returned
     pub async fn get_server_handler(&self, id: ObjectId) -> Result<Option<ServerHandler>> {
         let session = self.collection.find_one(doc! {"_id": id}, None).await?;
         if session.is_none(){
@@ -113,6 +120,7 @@ impl SessionHandler {
         Ok(Some(session.expect("checked above").server_handler))
     }
 
+    ///tries to update the  serverhandler in the session db
     pub async fn update_server_handler(&self, id: ObjectId, new_server_handler: ServerHandler) -> Result<bool> {
         let session = self.collection.find_one(
             doc! {"_id": id}, 
@@ -126,7 +134,7 @@ impl SessionHandler {
         let mut s = session.expect("checked for None");
         s.server_handler = new_server_handler;
 
-        let session = self.collection.find_one_and_replace(
+        self.collection.find_one_and_replace(
             doc! {"_id": id}, 
             s,
             None

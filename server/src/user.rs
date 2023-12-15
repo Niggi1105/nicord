@@ -85,6 +85,7 @@ impl UserHandler {
         Ok(oid)
     }
 
+    ///returns the sesnistive User matching the oid
     async fn get_user_sensitive(&self, user_id: ObjectId) -> Result<Option<SensitiveUser>> {
         Ok(self
             .collection
@@ -92,6 +93,7 @@ impl UserHandler {
             .await?)
     }
 
+    ///returns the User matching the oid
     pub async fn get_user(&self, user_id: ObjectId) -> Result<Option<User>> {
         let option = self.get_user_sensitive(user_id).await?;
         match option {
@@ -100,6 +102,7 @@ impl UserHandler {
         }
     }
 
+    ///find all users matching the username
     pub async fn find_user_by_name(&self, username: String) -> Result<Vec<User>> {
         let mut cursor = self
             .collection
@@ -115,8 +118,8 @@ impl UserHandler {
         Ok(users)
     }
 
+    ///sets the online status of the user to status
     pub async fn set_user_status(&self, user_id: ObjectId, status: bool) -> Result<()> {
-        let modif = UpdateModifications::Document(doc! {"is_online": status});
         self.collection
             .update_one(
                 doc! {"_id": user_id},
@@ -124,10 +127,11 @@ impl UserHandler {
                 None,
             )
             .await?;
-
         Ok(())
     }
 
+    ///should only be called after checking whether a session exists, panics if user doesn't exist
+    ///in db
     pub async fn add_user_server(&self, user_id: ObjectId, name: String) -> Result<()> {
         let mut servers = self
             .get_user_sensitive(user_id)
