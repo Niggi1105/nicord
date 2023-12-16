@@ -18,16 +18,16 @@ struct ServerConfig {
 pub struct ServerHandler;
 
 #[derive(Serialize, Deserialize, Debug)]
-enum MessageAuthor{
+enum MessageAuthor {
     Server,
-    User(String),           
+    User(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Message{
+struct Message {
     _id: ObjectId,
     content: String,
-    author: MessageAuthor
+    author: MessageAuthor,
 }
 
 impl ServerConfig {
@@ -48,11 +48,19 @@ impl ServerConfig {
 impl Message {
     pub fn new_server_message(content: String) -> Self {
         let oid = ObjectId::new();
-        Self{_id: oid, content, author: MessageAuthor::Server}
+        Self {
+            _id: oid,
+            content,
+            author: MessageAuthor::Server,
+        }
     }
     pub fn new_user_message(username: String, content: String) -> Self {
         let oid = ObjectId::new();
-        Self{_id: oid, content, author: MessageAuthor::User(username)}
+        Self {
+            _id: oid,
+            content,
+            author: MessageAuthor::User(username),
+        }
     }
 }
 
@@ -241,7 +249,9 @@ mod test {
             id: "123123123123123123123123".to_string(),
         };
         let client = connect_mongo(None).await.unwrap();
-        let server_id = ID { id: "120129184124124127777155".to_string()};
+        let server_id = ID {
+            id: "120129184124124127777155".to_string(),
+        };
 
         let db = client.database(&server_id.id);
         let conf_coll: Collection<ServerConfig> = db.collection("config");
@@ -254,17 +264,56 @@ mod test {
                 .await
                 .unwrap();
         match resp {
-            Response::Success => {},
-            other => panic!("unexpected enum variant: {:?}", other )
+            Response::Success => {}
+            other => panic!("unexpected enum variant: {:?}", other),
         }
 
         let channel: Collection<Message> = db.collection("TEST_CHANNEL");
         let message = channel.find_one(None, None).await.unwrap().unwrap();
         assert_eq!(message.content, "channel created...");
         match message.author {
-            MessageAuthor::Server => {},
-            other => panic!("unexpected enum variant: {:?}", other )
+            MessageAuthor::Server => {}
+            other => panic!("unexpected enum variant: {:?}", other),
         }
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_delete_channel() {
+        let user_id = ID {
+            id: "123123123123123123123123".to_string(),
+        };
+        let client = connect_mongo(None).await.unwrap();
+        let server_id = ID {
+            id: "120129184124124127777156".to_string(),
+        };
+        let db = client.database(&server_id.id);
+        let conf_coll: Collection<ServerConfig> = db.collection("config");
+        let conf = ServerConfig::new("TEST SERVER4".to_string(), user_id.clone());
+        conf_coll.insert_one(conf, None).await.unwrap();
+
+        let channel = db.collection("TEST_CHANNEL");
+        channel
+            .insert_one(Message::new_server_message("starting...".to_string()), None)
+            .await
+            .unwrap();
+
+        let mut collections = db.list_collection_names(None).await.unwrap();
+        assert!(collections.contains(&"TEST_CHANNEL".to_string()));
+
+        assert!(ServerHandler::delete_channel(
+            user_id,
+            &client,
+            &"TEST_CHANNEL".to_string(),
+            server_id
+        )
+        .await
+        .unwrap()
+        .succeeded());
+
+        collections = db.list_collection_names(None).await.unwrap();
+        assert!(!collections.contains(&"TEST_CHANNEL".to_string()));
+
         db.drop(None).await.unwrap();
     }
 }
