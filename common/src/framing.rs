@@ -14,9 +14,11 @@ where
     Self: Serialize + DeserializeOwned,
 {
     fn deframe(bytes: &[u8]) -> Result<Option<Self>> {
+        //leading 7 bytes are a string representation of the size as decimal
         if bytes.len() <= 7 {
             return Ok(None);
         }
+        //convert
         let bstr = String::from_utf8(bytes.to_vec())?;
         let l = bstr[0..7].parse::<usize>()?;
         if bstr.len() < l + 7 {

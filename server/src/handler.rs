@@ -85,7 +85,7 @@ impl Handler {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
         }
-        ServerHandler::new_channel(user_id, mongo_client, name, server_id).await
+        ServerHandler::new_channel(&user_id, mongo_client, &name, &server_id).await
     }
 }
 
