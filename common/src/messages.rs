@@ -15,10 +15,11 @@ pub enum RequestType {
     NewServer(String),
     DeleteServer(ID),
     NewChannel(ID, String),
+    GetChannels(ID),
+
     /*
     SendMessage(Message),
     GetMessages(ChannelId),
-    GetChannels(ServerId),
     GetFriends,
     AddFriend(UserId),*/
 }
@@ -35,6 +36,7 @@ pub enum Response {
     Error(ServerError),
     SessionCreated(ID),
     ServerCreated(ID),
+    ChannelList(Vec<String>),
     Success,
 }
 

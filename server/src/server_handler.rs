@@ -181,6 +181,27 @@ impl ServerHandler {
         channel.drop(None).await?;
         Ok(Response::Success)
     }
+
+    pub async fn get_channels(client: &Client, server_id: &ID, user_id: &ID) -> Result<Response>{
+        let server = client.database(&server_id.id);
+
+        let conf_coll: Collection<ServerConfig> = server.collection("config");
+        let conf_opt = conf_coll.find_one(None, None).await?;
+
+        if conf_opt.is_none() {
+            return Ok(Response::Error(ServerError::BadRequest));
+        }
+
+        if !conf_opt.expect("checked above").users.contains(user_id) {
+            return Ok(Response::Error(ServerError::PermissionDenied));
+        }
+
+        let collections = server.list_collection_names(None).await?;
+        let channels = collections.iter().filter(|channel| {
+            channel.as_str() != "config"
+        }).cloned().collect();
+        return Ok(Response::ChannelList(channels));
+    }
 }
 
 #[cfg(test)]
