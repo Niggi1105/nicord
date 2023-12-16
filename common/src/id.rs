@@ -2,7 +2,7 @@ use crate::framing::Frameable;
 use macros::Frame;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Deserialize, Frame, Clone)]
+#[derive(Debug, Serialize, Deserialize, Frame, Clone, PartialEq, Eq)]
 pub struct ID{
     pub id: String
 }
@@ -12,6 +12,7 @@ impl ToString for ID{
         self.id.clone()
     }
 }
+
 
 
 impl ID{

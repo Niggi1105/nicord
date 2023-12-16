@@ -1,14 +1,13 @@
 use anyhow::Result;
-use common::{id::ID, messages::Response};
+use common::messages::Response;
 use log::error;
 use mongodb::{
     bson::{doc, oid::ObjectId},
-    Client, Collection, Database, options::UpdateModifications,
+    Client, Collection, Database,
 };
 use serde::{Deserialize, Serialize};
 use std::time;
 
-use crate::server_handler::ServerHandler;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Session {
@@ -69,9 +68,9 @@ impl SessionHandler {
 
     ///creates a new session and inserts it into the session db, if the session already exists no
     ///new session is created
-    pub async fn start_session(&self, user_id: ObjectId) -> Result<Response> {
+    pub async fn start_session(&self, user_id: ObjectId) -> Result<()> {
         if self.check_session_active(user_id).await?.succeeded() {
-            return Ok(Response::Success);
+            return Ok(());
         }
 
         let session = Session::new(user_id);
@@ -83,7 +82,7 @@ impl SessionHandler {
             .as_object_id()
             .expect("is object id");
 
-        Ok(Response::Success)
+        Ok(())
     }
 
     ///delete the session entry from the session db

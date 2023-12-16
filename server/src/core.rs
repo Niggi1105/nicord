@@ -91,3 +91,13 @@ pub async fn accept_new_connections(mongo_client: Client, handler: Handler) -> R
         });
     }
 }
+
+#[cfg(test)]
+mod test {
+    use tokio::test;
+
+    #[test]
+    async fn happy_path_server_creation_and_deletion(){
+
+    }
+}

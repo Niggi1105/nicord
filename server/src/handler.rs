@@ -30,7 +30,8 @@ impl Handler {
     }
 
     // using id to sign in is not optimal, TODO: make email sign in
-    ///returns false if credentials are wrong or user doesn't exist'
+    ///returns Response Error InvalidCredentials if credentials are wrong or user doesn't exist
+    ///else returns Response Success
     pub async fn signin_by_id(&self, username: &str, password: &str, id: ID) -> Result<Response> {
         let oid = ObjectId::parse_str(id.clone().id)?;
         if !self
@@ -42,7 +43,7 @@ impl Handler {
         }
         self.user_handler.set_user_status(oid, true).await?;
         self.session_handler.start_session(oid).await?;
-        Ok(Response::SessionCreated(id))
+        Ok(Response::Success)
     }
 
     pub async fn signout(&self, id: ID) -> Result<Response> {
@@ -113,11 +114,11 @@ mod test {
             }
             _other => panic!("invalid response")
         };
-        let oid = ObjectId::parse_str(id.id.clone()).unwrap();
-        assert!(handler.check_authentication(id.clone()).await.unwrap());
+        assert!(handler.is_authenticated(id.clone()).await.unwrap());
         handler.signout(id.clone()).await.unwrap();
-        assert!(!handler.check_authentication(id.clone()).await.unwrap());
+        assert!(!handler.is_authenticated(id.clone()).await.unwrap());
 
+        println!("{:?}", handler.signin_by_id("TUser", "Password123", id.clone()).await);
         assert!(handler
             .signin_by_id("TUser", "Password123", id.clone())
             .await
