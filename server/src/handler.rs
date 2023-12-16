@@ -1,8 +1,8 @@
 use anyhow::Result;
-use common::{id::ID, messages::Response, error::ServerError};
+use common::{id::ID, messages::Response};
 use mongodb::{bson::oid::ObjectId, Client};
 
-use crate::{session::SessionHandler, user::UserHandler, server_handler::{self, ServerHandler}};
+use crate::{session::SessionHandler, user::UserHandler, server_handler::ServerHandler};
 
 #[derive(Clone)]
 pub struct Handler {
@@ -10,6 +10,7 @@ pub struct Handler {
     pub user_handler: UserHandler,
 }
 
+//authentication 
 impl Handler {
     pub fn new(session_handler: SessionHandler, user_handler: UserHandler) -> Self {
         Self {
@@ -46,6 +47,7 @@ impl Handler {
         Ok(Response::Success)
     }
 
+    ///deletes the session from session db and set the user status to inactive
     pub async fn signout(&self, id: ID) -> Result<Response> {
         let oid = ObjectId::parse_str(id.id)?;
         self.session_handler.end_session(oid).await?;
@@ -60,6 +62,11 @@ impl Handler {
         Ok(self.session_handler.check_session_active(oid).await?.succeeded())
     }
 
+}
+
+//server handler stuff
+impl Handler {
+    ///checks authentication and creates a new nicord server(Database)
     pub async fn create_new_server(&self, mongo_client: &Client, user_id: ID, name: String) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
@@ -69,23 +76,26 @@ impl Handler {
         Ok(Response::Success)
     }
 
-    pub async fn delete_server(&self, mongo_client: &Client, user_id: ID, server_id: ID) -> Result<Response> {
+    ///checks authentication and deletes a nicord server if the user has the required priviledges
+    pub async fn delete_server(&self, mongo_client: &Client, user_id: ID, server_id: &ID) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
         }
         //delete the server database
-        let resp = ServerHandler::delete_server(user_id, mongo_client, server_id).await?;
+        let resp = ServerHandler::delete_server(&user_id, mongo_client, server_id).await?;
 
         Ok(resp)
     }
 
-    pub async fn new_channel(&self, mongo_client: &Client, user_id: ID, name: String, server_id: ID) -> Result<Response> {
+    ///creates a new channel(Collection) on a server if the user is authenticated and has the
+    ///required priviledges
+    pub async fn new_channel(&self, mongo_client: &Client, user_id: ID, name: &String, server_id: &ID) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
         }
-        ServerHandler::new_channel(&user_id, mongo_client, &name, &server_id).await
+        ServerHandler::new_channel(&user_id, mongo_client, name, server_id).await
     }
 }
 

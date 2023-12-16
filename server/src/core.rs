@@ -1,7 +1,6 @@
 use anyhow::Result;
 use common::connection::Connection;
-use common::id::ID;
-use log::{debug, error, info, warn};
+use log::error;
 use mongodb::Client;
 use tokio::net::TcpStream;
 
@@ -42,14 +41,14 @@ async fn process_request(
         RequestType::DeleteServer(server_id) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                handler.delete_server(&mongo_client, cookie, server_id).await?
+                handler.delete_server(&mongo_client, cookie, &server_id).await?
             }
         },
 
         RequestType::NewChannel(server_id, name) => match request.session_cookie {
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                handler.new_channel(&mongo_client, cookie, name, server_id).await?
+                handler.new_channel(&mongo_client, cookie, &name, &server_id).await?
             }
         }
     })
@@ -82,8 +81,7 @@ async fn handler_fn(stream: TcpStream, mongo_client: Client, handler: Handler) {
 pub async fn accept_new_connections(mongo_client: Client, handler: Handler) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8087").await?;
     loop {
-        let (socket, addr) = listener.accept().await?;
-        info!("New connection from {:?}", addr);
+        let (socket, _addr) = listener.accept().await?;
         let cl = mongo_client.clone();
         let ah = handler.clone();
         tokio::task::spawn(async move {

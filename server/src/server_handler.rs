@@ -100,13 +100,10 @@ impl ServerHandler {
     }
 
     /// deletes the server db if the user has the required priviledges
-    pub async fn delete_server(user_id: ID, client: &Client, server_id: ID) -> Result<Response> {
-        let server_hex_id = ObjectId::parse_str(server_id.id)
-            .expect("is an oid")
-            .to_hex();
+    pub async fn delete_server(user_id: &ID, client: &Client, server_id: &ID) -> Result<Response> {
+        let db = client.database(&server_id.id);
 
-        let db = client.database(&server_hex_id);
-        match Self::check_priviledge(&db, client, &user_id).await? {
+        match Self::check_priviledge(&db, client, user_id).await? {
             Response::Success => {
                 db.drop(None).await?;
                 Ok(Response::Success)
@@ -164,14 +161,14 @@ impl ServerHandler {
     ///delete a channel by its name, returns bad request if channel doesn't exist or the server
     ///does not exist
     pub async fn delete_channel(
-        user_id: ID,
+        user_id: &ID,
         client: &Client,
         name: &String,
-        server_id: ID,
+        server_id: &ID,
     ) -> Result<Response> {
         let db = client.database(&server_id.to_string());
         let channel: Collection<Message> = db.collection(name);
-        match Self::check_priviledge(&db, client, &user_id).await? {
+        match Self::check_priviledge(&db, client, user_id).await? {
             Response::Success => {}
             Response::Error(e) => return Ok(Response::Error(e)),
             other => panic!("unexpected enum variant: {:?}", other),
