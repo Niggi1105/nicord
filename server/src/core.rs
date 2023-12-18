@@ -55,7 +55,7 @@ async fn process_request(
         RequestType::GetChannels(server_id) => match request.session_cookie{
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {
-                handler.get_channels(&mongo_client, cookie, server_id)
+                handler.get_channels(&mongo_client, cookie, &server_id).await?
             }
         }
     })

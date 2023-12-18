@@ -152,7 +152,7 @@ impl ServerHandler {
         //create the channel
         let channel: Collection<Message> = db.collection(name);
         let init_message = Message::new_server_message("channel created...".to_string());
-        //insert the init message into the channels' collection in order to create the collection
+        //insert the init message into the channel_response' collection in order to create the collection
         channel.insert_one(init_message, None).await?;
 
         Ok(Response::Success)
@@ -182,7 +182,9 @@ impl ServerHandler {
         Ok(Response::Success)
     }
 
-    pub async fn get_channels(client: &Client, server_id: &ID, user_id: &ID) -> Result<Response>{
+    ///returns a response containing a vector with all the channel names in the database if the
+    ///user is listed as user in the config document
+    pub async fn get_channels(client: &Client, server_id: &ID, user_id: &ID) -> Result<Response> {
         let server = client.database(&server_id.id);
 
         let conf_coll: Collection<ServerConfig> = server.collection("config");
@@ -197,10 +199,12 @@ impl ServerHandler {
         }
 
         let collections = server.list_collection_names(None).await?;
-        let channels = collections.iter().filter(|channel| {
-            channel.as_str() != "config"
-        }).cloned().collect();
-        return Ok(Response::ChannelList(channels));
+        let channel_response = collections
+            .iter()
+            .filter(|channel| channel.as_str() != "config")
+            .cloned()
+            .collect();
+        Ok(Response::ChannelList(channel_response))
     }
 }
 
@@ -249,9 +253,9 @@ mod test {
         coll.insert_one(conf, None).await.unwrap();
 
         let resp = ServerHandler::delete_server(
-            user_id,
+            &user_id,
             &client,
-            ID {
+            &ID {
                 id: "120129184124124127777154".to_string(),
             },
         )
@@ -259,6 +263,12 @@ mod test {
         .unwrap();
         assert!(resp.succeeded());
         assert!(coll.find_one(None, None).await.unwrap().is_none());
+        assert!(!client
+            .list_database_names(None, None)
+            .await
+            .unwrap()
+            .contains(&"120129184124124127777154".to_string()));
+        db.drop(None).await.unwrap();
     }
 
     #[test]
@@ -289,11 +299,13 @@ mod test {
         let channel: Collection<Message> = db.collection("TEST_CHANNEL");
         let message = channel.find_one(None, None).await.unwrap().unwrap();
         assert_eq!(message.content, "channel created...");
+        db.drop(None).await.unwrap();
         match message.author {
             MessageAuthor::Server => {}
-            other => panic!("unexpected enum variant: {:?}", other),
+            other => {
+                panic!("unexpected enum variant: {:?}", other)
+            }
         }
-        db.drop(None).await.unwrap();
     }
 
     #[test]
@@ -320,10 +332,10 @@ mod test {
         assert!(collections.contains(&"TEST_CHANNEL".to_string()));
 
         assert!(ServerHandler::delete_channel(
-            user_id,
+            &user_id,
             &client,
             &"TEST_CHANNEL".to_string(),
-            server_id
+            &server_id
         )
         .await
         .unwrap()
@@ -333,5 +345,81 @@ mod test {
         assert!(!collections.contains(&"TEST_CHANNEL".to_string()));
 
         db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_get_channels_one_channel() {
+        let user_id = ID {
+            id: "123123123123123123123123".to_string(),
+        };
+        let client = connect_mongo(None).await.unwrap();
+        let server_id = ID {
+            id: "120129184124124127777157".to_string(),
+        };
+        let db = client.database(&server_id.id);
+        let conf_coll: Collection<ServerConfig> = db.collection("config");
+        let conf = ServerConfig::new("TEST SERVER5".to_string(), user_id.clone());
+        conf_coll.insert_one(conf, None).await.unwrap();
+
+        let channel = db.collection("TEST_CHANNEL");
+        channel
+            .insert_one(Message::new_server_message("starting...".to_string()), None)
+            .await
+            .unwrap();
+
+        let channel_response = ServerHandler::get_channels(&client, &server_id, &user_id)
+            .await
+            .unwrap();
+        db.drop(None).await.unwrap();
+        match channel_response {
+            Response::ChannelList(channels) => {
+                assert_eq!(channels.len(), 1);
+                assert_eq!(channels[0], "TEST_CHANNEL");
+            }
+            other => {
+                panic!("unexpected enum variant: {:?}", other)
+            }
+        }
+    }
+
+    #[test]
+    async fn test_get_channels_multiple_channels() {
+        let user_id = ID {
+            id: "123123123123123123123123".to_string(),
+        };
+        let client = connect_mongo(None).await.unwrap();
+        let server_id = ID {
+            id: "120129184124124127777158".to_string(),
+        };
+        let db = client.database(&server_id.id);
+        let conf_coll: Collection<ServerConfig> = db.collection("config");
+        let conf = ServerConfig::new("TEST SERVER6".to_string(), user_id.clone());
+        conf_coll.insert_one(conf, None).await.unwrap();
+
+        let mut channel = db.collection("TEST_CHANNEL1");
+        channel
+            .insert_one(Message::new_server_message("starting...".to_string()), None)
+            .await
+            .unwrap();
+
+        channel = db.collection("TEST_CHANNEL2");
+        channel
+            .insert_one(Message::new_server_message("starting...".to_string()), None)
+            .await
+            .unwrap();
+
+
+        let channel_response = ServerHandler::get_channels(&client, &server_id, &user_id)
+            .await
+            .unwrap();
+        db.drop(None).await.unwrap();
+        match channel_response {
+            Response::ChannelList(channels) => {
+                assert_eq!(channels.len(), 2);
+                assert!(channels.contains(&"TEST_CHANNEL1".to_string()));
+                assert!(channels.contains(&"TEST_CHANNEL2".to_string()));
+            }
+            other => panic!("unexpected enum variant: {:?}", other),
+        }
     }
 }

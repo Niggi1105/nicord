@@ -97,6 +97,16 @@ impl Handler {
         }
         ServerHandler::new_channel(&user_id, mongo_client, name, server_id).await
     }
+
+    ///check authentication and priviledges, return a response containing a vec of the channelnames
+    ///if the user has at least user priviledge on the server
+    pub async fn get_channels(&self, mongo_client: &Client, user_id: ID, server_id: &ID) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id)?;
+            return self.session_handler.check_session_active(oid).await;
+        }
+        ServerHandler::get_channels(mongo_client, server_id, &user_id).await
+    }
 }
 
 #[cfg(test)]
@@ -109,8 +119,8 @@ mod test {
     #[test]
     async fn test_auth() {
         let client = connect_mongo(None).await.unwrap();
-        let uhandler = UserHandler::from_names(&client, "TEST", "users");
-        let shandler = SessionHandler::from_names(&client, "TEST", "sessions");
+        let uhandler = UserHandler::from_names(&client, "TESTAUTH", "users");
+        let shandler = SessionHandler::from_names(&client, "TESTAUTH", "sessions");
         let handler = Handler::new(shandler, uhandler);
 
         let resp = handler
