@@ -17,7 +17,7 @@ pub enum RequestType {
     NewChannel(ID, String),
     DeleteChannel(ID, String),
     GetChannels(ID),
-
+    SendMessage(ID, String, String), //ServerId, Channelname, Message
     /*
     SendMessage(Message),
     GetMessages(ChannelId),

@@ -2,7 +2,7 @@ use anyhow::Result;
 use common::{id::ID, messages::Response};
 use mongodb::{bson::oid::ObjectId, Client};
 
-use crate::{session::SessionHandler, user::UserHandler, server_handler::ServerHandler};
+use crate::{server_handler::ServerHandler, session::SessionHandler, user::UserHandler};
 
 #[derive(Clone)]
 pub struct Handler {
@@ -10,7 +10,7 @@ pub struct Handler {
     pub user_handler: UserHandler,
 }
 
-//authentication 
+//authentication
 impl Handler {
     pub fn new(session_handler: SessionHandler, user_handler: UserHandler) -> Self {
         Self {
@@ -40,7 +40,9 @@ impl Handler {
             .check_user_credentials(oid, username, password)
             .await?
         {
-            return Ok(Response::Error(common::error::ServerError::InvalidCredentials));
+            return Ok(Response::Error(
+                common::error::ServerError::InvalidCredentials,
+            ));
         }
         self.user_handler.set_user_status(oid, true).await?;
         self.session_handler.start_session(oid).await?;
@@ -51,22 +53,29 @@ impl Handler {
     pub async fn signout(&self, id: ID) -> Result<Response> {
         let oid = ObjectId::parse_str(id.id)?;
         self.session_handler.end_session(oid).await?;
-        self.user_handler
-            .set_user_status(oid, false)
-            .await?;
+        self.user_handler.set_user_status(oid, false).await?;
         Ok(Response::Success)
     }
 
     async fn is_authenticated(&self, user_id: ID) -> Result<bool> {
         let oid = ObjectId::parse_str(user_id.id)?;
-        Ok(self.session_handler.check_session_active(oid).await?.succeeded())
+        Ok(self
+            .session_handler
+            .check_session_active(oid)
+            .await?
+            .succeeded())
     }
 }
 
 //server handler stuff
 impl Handler {
     ///checks authentication and creates a new nicord server(Database)
-    pub async fn create_new_server(&self, mongo_client: &Client, user_id: ID, name: String) -> Result<Response> {
+    pub async fn create_new_server(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        name: String,
+    ) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
@@ -75,19 +84,29 @@ impl Handler {
     }
 
     ///checks authentication and deletes a nicord server if the user has the required priviledges
-    pub async fn delete_server(&self, mongo_client: &Client, user_id: ID, server_id: &ID) -> Result<Response> {
+    pub async fn delete_server(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        server_id: &ID,
+    ) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
         }
         //delete the server database
         ServerHandler::delete_server(&user_id, mongo_client, server_id).await
-
     }
 
     ///creates a new channel(Collection) on a server if the user is authenticated and has the
     ///required priviledges
-    pub async fn new_channel(&self, mongo_client: &Client, user_id: ID, name: &String, server_id: &ID) -> Result<Response> {
+    pub async fn new_channel(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        name: &String,
+        server_id: &ID,
+    ) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
@@ -96,18 +115,29 @@ impl Handler {
     }
 
     ///deletes the channel if the user is authenticated and has the required priviledges
-    ///returns bad request if channel does not exist 
-    pub async fn delete_channels(&self, mongo_client: &Client, user_id: ID, name: &String, server_id: &ID) -> Result<Response> {
+    ///returns bad request if channel does not exist
+    pub async fn delete_channels(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        name: &String,
+        server_id: &ID,
+    ) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
-            return self.session_handler.check_session_active(oid).await;
+            return self.session_handler.check_session_active(oid).await; 
         }
         ServerHandler::delete_channel(&user_id, mongo_client, name, server_id).await
     }
 
     ///check authentication and priviledges, return a response containing a vec of the channelnames
     ///if the user has at least user priviledge on the server
-    pub async fn get_channels(&self, mongo_client: &Client, user_id: ID, server_id: &ID) -> Result<Response> {
+    pub async fn get_channels(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        server_id: &ID,
+    ) -> Result<Response> {
         if !self.is_authenticated(user_id.clone()).await? {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
@@ -115,7 +145,21 @@ impl Handler {
         ServerHandler::get_channels(mongo_client, server_id, &user_id).await
     }
 
-    
+    pub async fn send_message(
+        &self,
+        mongo_client: &Client,
+        user_id: ID,
+        server_id: &ID,
+        channel_name: String,
+        message_content: String,
+    ) -> Result<Response> {
+        let oid = ObjectId::parse_str(user_id.id.clone())?;
+        if !self.is_authenticated(user_id.clone()).await? {
+            return self.session_handler.check_session_active(oid).await;
+        }
+        let username = self.user_handler.get_user(oid).await?.expect("checked above").username;
+        ServerHandler::send_message(mongo_client,  server_id, &channel_name, &user_id, message_content, username).await
+    }
 }
 
 #[cfg(test)]
@@ -138,28 +182,28 @@ mod test {
             .unwrap();
 
         let id = match resp {
-            Response::SessionCreated(id) => {
-                id
-            }
-            _other => panic!("invalid response")
+            Response::SessionCreated(id) => id,
+            _other => panic!("invalid response"),
         };
         assert!(handler.is_authenticated(id.clone()).await.unwrap());
         handler.signout(id.clone()).await.unwrap();
         assert!(!handler.is_authenticated(id.clone()).await.unwrap());
 
-        println!("{:?}", handler.signin_by_id("TUser", "Password123", id.clone()).await);
         assert!(handler
             .signin_by_id("TUser", "Password123", id.clone())
             .await
-            .unwrap().succeeded());
+            .unwrap()
+            .succeeded());
         assert!(!handler
             .signin_by_id("TUser", "Password", id.clone())
             .await
-            .unwrap().succeeded());
+            .unwrap()
+            .succeeded());
         assert!(!handler
             .signin_by_id("Us", "Password123", id.clone())
             .await
-            .unwrap().succeeded());
+            .unwrap()
+            .succeeded());
         assert!(!handler
             .signin_by_id(
                 "TUser",
@@ -169,9 +213,10 @@ mod test {
                 }
             )
             .await
-            .unwrap().succeeded());
+            .unwrap()
+            .succeeded());
         handler.signout(id.clone()).await.unwrap();
 
-        client.database("TEST").drop(None).await.unwrap();
+        client.database("TESTAUTH").drop(None).await.unwrap();
     }
 }

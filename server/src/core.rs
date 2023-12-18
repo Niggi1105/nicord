@@ -9,7 +9,7 @@ use common::messages::{Request, RequestType, Response};
 
 use crate::handler::Handler;
 
-///does server intern processing of the request and returns an appropriate response
+///match the request and make appropriate calls to the handler
 async fn process_request(
     mongo_client: Client,
     request: Request,
@@ -65,10 +65,18 @@ async fn process_request(
                 handler.get_channels(&mongo_client, cookie, &server_id).await?
             }
         }
+
+        RequestType::SendMessage(server_id, channel_name, message_content) => match request.session_cookie {
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                handler.send_message(&mongo_client, cookie, &server_id, channel_name, message_content).await?
+            }
+        }
+
     })
 }
 
-/// fetch the request from the Connection, if it couldn't be fetched return an error'
+///fetch the request from the Connection, if it couldn't be fetched return an error'
 async fn fetch_request(conn: &mut Connection) -> Request {
     match conn.read().await {
         Err(e) => {
@@ -82,7 +90,7 @@ async fn fetch_request(conn: &mut Connection) -> Request {
     }
 }
 
-/// creates new connection from Stream and does all opperations on it
+///creates new connection from Stream and does all opperations on it
 async fn handler_fn(stream: TcpStream, mongo_client: Client, handler: Handler) {
     let mut conn = Connection::new(stream);
     let request = fetch_request(&mut conn).await;

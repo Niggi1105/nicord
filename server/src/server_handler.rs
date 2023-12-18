@@ -5,6 +5,7 @@ use mongodb::{
     Client, Collection, Database,
 };
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 #[derive(Default, Serialize, Deserialize)]
 struct ServerConfig {
@@ -17,17 +18,41 @@ struct ServerConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServerHandler;
 
-#[derive(Serialize, Deserialize, Debug)]
-enum MessageAuthor {
-    Server,
-    User(String),
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+struct Message {
+    content: String,
+    author: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Message {
-    _id: ObjectId,
-    content: String,
-    author: MessageAuthor,
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+struct Block {
+    messages: Vec<Message>,
+    time_stamp: SystemTime,
+    filled: bool,
+}
+
+
+impl Block {
+    fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            time_stamp: SystemTime::now(),
+            filled: false,
+        }
+    }
+
+    ///add message to a block, if reaches 50 sets filled flag, if len >= 50 and add message is
+    ///called false is returned to signalize an invalid operation
+    fn add_message(&mut self, message: Message) -> bool {
+        if self.messages.len() >= 50 {
+            return false;
+        }
+        self.messages.push(message);
+        if self.messages.len() == 50 {
+            self.filled = true
+        };
+        true
+    }
 }
 
 impl ServerConfig {
@@ -46,31 +71,14 @@ impl ServerConfig {
 }
 
 impl Message {
-    pub fn new_server_message(content: String) -> Self {
-        let oid = ObjectId::new();
-        Self {
-            _id: oid,
-            content,
-            author: MessageAuthor::Server,
-        }
-    }
-    pub fn new_user_message(username: String, content: String) -> Self {
-        let oid = ObjectId::new();
-        Self {
-            _id: oid,
-            content,
-            author: MessageAuthor::User(username),
-        }
+    pub fn new(content: String, author: String) -> Self {
+        Self { content, author }
     }
 }
 
 impl ServerHandler {
     ///checks whether the user has the required priviledges on the server
-    async fn check_priviledge(
-        server: &Database,
-        client: &Client,
-        user_id: &ID,
-    ) -> Result<Response> {
+    async fn check_priviledge(server: &Database, user_id: &ID) -> Result<Response> {
         let conf_coll: Collection<ServerConfig> = server.collection("config");
         let conf_opt = conf_coll.find_one(None, None).await?;
 
@@ -103,7 +111,7 @@ impl ServerHandler {
     pub async fn delete_server(user_id: &ID, client: &Client, server_id: &ID) -> Result<Response> {
         let db = client.database(&server_id.id);
 
-        match Self::check_priviledge(&db, client, user_id).await? {
+        match Self::check_priviledge(&db, user_id).await? {
             Response::Success => {
                 db.drop(None).await?;
                 Ok(Response::Success)
@@ -137,7 +145,7 @@ impl ServerHandler {
         server_id: &ID,
     ) -> Result<Response> {
         let db = client.database(&server_id.to_string());
-        match Self::check_priviledge(&db, client, user_id).await? {
+        match Self::check_priviledge(&db, user_id).await? {
             Response::Success => {}
             Response::Error(e) => return Ok(Response::Error(e)),
             _other => return Ok(Response::Error(ServerError::InternalServerError)),
@@ -151,7 +159,7 @@ impl ServerHandler {
 
         //create the channel
         let channel: Collection<Message> = db.collection(name);
-        let init_message = Message::new_server_message("channel created...".to_string());
+        let init_message = Message::new("channel created...".to_string(), "SERVER".to_string());
         //insert the init message into the channel_response' collection in order to create the collection
         channel.insert_one(init_message, None).await?;
 
@@ -168,7 +176,7 @@ impl ServerHandler {
     ) -> Result<Response> {
         let db = client.database(&server_id.to_string());
         let channel: Collection<Message> = db.collection(name);
-        match Self::check_priviledge(&db, client, user_id).await? {
+        match Self::check_priviledge(&db, user_id).await? {
             Response::Success => {}
             Response::Error(e) => return Ok(Response::Error(e)),
             other => panic!("unexpected enum variant: {:?}", other),
@@ -206,10 +214,58 @@ impl ServerHandler {
             .collect();
         Ok(Response::ChannelList(channel_response))
     }
+
+    pub async fn send_message(
+        client: &Client,
+        server_id: &ID,
+        channel_name: &String,
+        user_id: &ID,
+        content: String,
+        author: String,
+    ) -> Result<Response> {
+        let server = client.database(&server_id.id);
+        let conf_coll: Collection<ServerConfig> = server.collection("config");
+        let conf_opt = conf_coll.find_one(None, None).await?;
+
+        if conf_opt.is_none() {
+            return Ok(Response::Error(ServerError::BadRequest));
+        }
+        if !conf_opt.expect("checked above").users.contains(user_id) {
+            return Ok(Response::Error(ServerError::PermissionDenied));
+        }
+        if !server
+            .list_collection_names(None)
+            .await?
+            .contains(channel_name)
+        {
+            return Ok(Response::Error(ServerError::BadRequest));
+        }
+
+        let channel: Collection<Block> = server.collection(channel_name);
+        let message = Message::new(content, author);
+
+        if let Some(mut block) = channel.find_one(doc! {"filled": false}, None).await? {
+            if !block.add_message(message) {
+                //full block not marked as full
+                return Ok(Response::Error(ServerError::InternalServerError));
+            }
+            channel
+                .find_one_and_replace(doc! {"filled": false}, block, None)
+                .await?;
+        } else {
+            let mut block = Block::new();
+            block.add_message(message);
+            channel.insert_one(block, None).await?;
+        };
+
+        Ok(Response::Success)
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::mpsc::channel;
+
     use crate::mongodb::connect_mongo;
     use tokio::test;
 
@@ -300,12 +356,7 @@ mod test {
         let message = channel.find_one(None, None).await.unwrap().unwrap();
         assert_eq!(message.content, "channel created...");
         db.drop(None).await.unwrap();
-        match message.author {
-            MessageAuthor::Server => {}
-            other => {
-                panic!("unexpected enum variant: {:?}", other)
-            }
-        }
+        assert_eq!(message.author, "SERVER");
     }
 
     #[test]
@@ -324,7 +375,10 @@ mod test {
 
         let channel = db.collection("TEST_CHANNEL");
         channel
-            .insert_one(Message::new_server_message("starting...".to_string()), None)
+            .insert_one(
+                Message::new("starting...".to_string(), "SERVER".to_string()),
+                None,
+            )
             .await
             .unwrap();
 
@@ -362,10 +416,12 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let channel = db.collection("TEST_CHANNEL");
-        channel
-            .insert_one(Message::new_server_message("starting...".to_string()), None)
-            .await
-            .unwrap();
+        let mut block = Block::new();
+        block.add_message(Message::new(
+            "starting...".to_string(),
+            "SERVER".to_string(),
+        ));
+        channel.insert_one(block, None).await.unwrap();
 
         let channel_response = ServerHandler::get_channels(&client, &server_id, &user_id)
             .await
@@ -397,17 +453,15 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let mut channel = db.collection("TEST_CHANNEL1");
-        channel
-            .insert_one(Message::new_server_message("starting...".to_string()), None)
-            .await
-            .unwrap();
+        let mut block = Block::new();
+        block.add_message(Message::new(
+            "starting...".to_string(),
+            "SERVER".to_string(),
+        ));
+        channel.insert_one(&block, None).await.unwrap();
 
         channel = db.collection("TEST_CHANNEL2");
-        channel
-            .insert_one(Message::new_server_message("starting...".to_string()), None)
-            .await
-            .unwrap();
-
+        channel.insert_one(block, None).await.unwrap();
 
         let channel_response = ServerHandler::get_channels(&client, &server_id, &user_id)
             .await
@@ -421,5 +475,48 @@ mod test {
             }
             other => panic!("unexpected enum variant: {:?}", other),
         }
+    }
+
+    #[test]
+    async fn test_send_message() {
+        let user_id = ID {
+            id: "123123123123123123123123".to_string(),
+        };
+        let client = connect_mongo(None).await.unwrap();
+        let server_id = ID {
+            id: "120129184124124127777159".to_string(),
+        };
+        let db = client.database(&server_id.id);
+        db.drop(None).await.unwrap();
+        let conf_coll: Collection<ServerConfig> = db.collection("config");
+        let conf = ServerConfig::new("TEST SERVER7".to_string(), user_id.clone());
+        conf_coll.insert_one(conf, None).await.unwrap();
+
+        let channel = db.collection("TEST_CHANNEL1");
+        let mut block = Block::new();
+        block.add_message(Message::new(
+            "starting...".to_string(),
+            "SERVER".to_string(),
+        ));
+        channel.insert_one(&block, None).await.unwrap();
+
+        let content = "I'm a message".to_string();
+        let author = "Some Dude".to_string();
+        assert!(ServerHandler::send_message(
+            &client,
+            &server_id,
+            &"TEST_CHANNEL1".to_string(),
+            &user_id,
+            content.clone(),
+            author.clone()
+        )
+        .await
+        .unwrap()
+        .succeeded());
+
+        block.add_message(Message::new(content, author));
+        let blk: Block = channel.find_one(doc! {"filled": false}, None).await.unwrap().unwrap();
+        assert_eq!(blk, block);
+        db.drop(None).await.unwrap();
     }
 }
