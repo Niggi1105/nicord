@@ -61,7 +61,6 @@ impl Handler {
         let oid = ObjectId::parse_str(user_id.id)?;
         Ok(self.session_handler.check_session_active(oid).await?.succeeded())
     }
-
 }
 
 //server handler stuff
@@ -72,8 +71,7 @@ impl Handler {
             let oid = ObjectId::parse_str(user_id.id)?;
             return self.session_handler.check_session_active(oid).await;
         }
-        ServerHandler::new_server(user_id, mongo_client, name).await?;
-        Ok(Response::Success)
+        ServerHandler::new_server(user_id, mongo_client, name).await
     }
 
     ///checks authentication and deletes a nicord server if the user has the required priviledges
@@ -83,9 +81,8 @@ impl Handler {
             return self.session_handler.check_session_active(oid).await;
         }
         //delete the server database
-        let resp = ServerHandler::delete_server(&user_id, mongo_client, server_id).await?;
+        ServerHandler::delete_server(&user_id, mongo_client, server_id).await
 
-        Ok(resp)
     }
 
     ///creates a new channel(Collection) on a server if the user is authenticated and has the
@@ -98,6 +95,16 @@ impl Handler {
         ServerHandler::new_channel(&user_id, mongo_client, name, server_id).await
     }
 
+    ///deletes the channel if the user is authenticated and has the required priviledges
+    ///returns bad request if channel does not exist 
+    pub async fn delete_channels(&self, mongo_client: &Client, user_id: ID, name: &String, server_id: &ID) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id)?;
+            return self.session_handler.check_session_active(oid).await;
+        }
+        ServerHandler::delete_channel(&user_id, mongo_client, name, server_id).await
+    }
+
     ///check authentication and priviledges, return a response containing a vec of the channelnames
     ///if the user has at least user priviledge on the server
     pub async fn get_channels(&self, mongo_client: &Client, user_id: ID, server_id: &ID) -> Result<Response> {
@@ -107,6 +114,8 @@ impl Handler {
         }
         ServerHandler::get_channels(mongo_client, server_id, &user_id).await
     }
+
+    
 }
 
 #[cfg(test)]

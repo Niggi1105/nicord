@@ -52,6 +52,13 @@ async fn process_request(
             }
         }
 
+        RequestType::DeleteChannel(server_id, name) => match request.session_cookie{
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                handler.delete_channels(&mongo_client, cookie, &name, &server_id).await?
+            }
+        }
+
         RequestType::GetChannels(server_id) => match request.session_cookie{
             None => Response::Error(ServerError::PermissionDenied),
             Some(cookie) => {

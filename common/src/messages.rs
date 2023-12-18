@@ -15,6 +15,7 @@ pub enum RequestType {
     NewServer(String),
     DeleteServer(ID),
     NewChannel(ID, String),
+    DeleteChannel(ID, String),
     GetChannels(ID),
 
     /*
