@@ -120,14 +120,62 @@ pub async fn accept_new_connections(mongo_client: Client, handler: Handler) -> R
 
 #[cfg(test)]
 mod test {
+    use common::messages::{Request, RequestType, Message};
     use tokio::test;
+    use super::*;
 
-    use crate::mongodb::connect_mongo;
+    use crate::{mongodb::connect_mongo, handler::Handler, user::UserHandler, session::SessionHandler};
 
     #[test]
-    async fn happy_path_server_creation_and_deletion(){
+    async fn happy_path(){
         let client = connect_mongo(None).await.unwrap();
+        let request_type = RequestType::SignUp("TEST User".to_string(), "TEST User Password".to_string());
+        let mut request = Request { tp: request_type, session_cookie: None};
+        let test_db = client.database("TEST_DB");
+        let handler = Handler::new(SessionHandler::from_names(&client, "TEST_DB", "SESSIONS"), UserHandler::from_names(&client, "TEST_DB", "USERS"));
+        let resp = process_request(client.clone(), request, handler.clone()).await.unwrap();
+        let token = match resp {
+            Response::SessionCreated(token) => token,
+            other => {
+                test_db.drop(None).await.unwrap();
+                panic!("unexpected enum variant: {:?}", other);
+            }
+        };
+
         let server_name = "TEST_SERVER".to_string();
+        request = Request::new(RequestType::NewServer(server_name.clone()), Some(token.clone()));
+        let server_id = match process_request(client.clone(), request, handler.clone()).await.unwrap(){
+            Response::ServerCreated(sid) => sid,
+            other => {
+                test_db.drop(None).await.unwrap();
+                panic!("unexpected enum variant: {:?}", other);
+            }
+        };
+
+        let channel_name = "TESTChannel".to_string();
+        request = Request::new(RequestType::NewChannel(server_id.clone(), channel_name.clone()), Some(token.clone()));
+        assert!(process_request(client.clone(), request, handler.clone()).await.unwrap().succeeded());
+
+        let content = "This is a test message".to_string();
+        request = Request::new(RequestType::SendMessage(server_id.clone(), channel_name.clone(), content.clone()), Some(token.clone()));
+        assert!(process_request(client.clone(), request, handler.clone()).await.unwrap().succeeded());
+
         
+        request = Request::new(RequestType::GetMessages(server_id.clone(), channel_name.clone(), 0), Some(token.clone()));
+        match process_request(client.clone(), request, handler.clone()).await.unwrap() {
+            Response::MessagesFound(messages) => {
+                assert_eq!(messages.len(), 2);
+                assert_eq!(messages[0], Message::new("channel created...".to_string(), "SERVER".to_string()));
+                assert_eq!(messages[1], Message::new(content, "TEST User".to_string()));
+            }
+            other => {
+                panic!("unexpected enum variant: {:?}", other);
+            }
+        }
+
+        request = Request::new(RequestType::DeleteServer(server_id), Some(token.clone()));
+        assert!(process_request(client.clone(), request, handler.clone()).await.unwrap().succeeded());
+
+        test_db.drop(None).await.unwrap();
     }
 }

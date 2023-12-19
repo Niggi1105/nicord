@@ -9,7 +9,7 @@ use mongodb::{
     Client, Collection, Database,
 };
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::{time::SystemTime, borrow::Borrow};
 
 #[derive(Default, Serialize, Deserialize)]
 struct ServerConfig {
@@ -24,14 +24,14 @@ pub struct ServerHandler;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct Block {
-    _id: u64,
+    _id: u32,
     messages: Vec<Message>,
     time_stamp: SystemTime,
     filled: bool,
 }
 
 impl Block {
-    fn new(id: u64) -> Self {
+    fn new(id: u32) -> Self {
         Self {
             _id: id,
             messages: Vec::new(),
@@ -151,10 +151,12 @@ impl ServerHandler {
         }
 
         //create the channel
-        let channel: Collection<Message> = db.collection(name);
+        let channel: Collection<Block> = db.collection(name);
+        let mut block = Block::new(0);
         let init_message = Message::new("channel created...".to_string(), "SERVER".to_string());
+        block.add_message(init_message);
+        channel.insert_one(block, None).await?;
         //insert the init message into the channel_response' collection in order to create the collection
-        channel.insert_one(init_message, None).await?;
 
         Ok(Response::Success)
     }
@@ -248,9 +250,9 @@ impl ServerHandler {
                 .find_one_and_replace(doc! {"filled": false}, block, None)
                 .await?;
         } else {
-            //first block gets 0, second 1, ..., k-ter block gets k-1
             let id = channel.count_documents(None, None).await?;
-            let mut block = Block::new(id);
+            //first block gets 0, second 1, ..., k-ter block gets k-1
+            let mut block = Block::new(id as u32);
             block.add_message(message);
             channel.insert_one(block, None).await?;
         };

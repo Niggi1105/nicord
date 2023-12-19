@@ -17,7 +17,6 @@ struct Session {
 
 #[derive(Clone)]
 pub struct SessionHandler {
-    database: Database,
     collection: Collection<Session>,
 }
 
@@ -50,7 +49,6 @@ impl Session {
 impl SessionHandler {
     pub fn new(database: Database, collection: Collection<Session>) -> Self {
         Self {
-            database,
             collection,
         }
     }
@@ -61,7 +59,6 @@ impl SessionHandler {
         let coll = db.collection(collection);
 
         Self {
-            database: db,
             collection: coll,
         }
     }
@@ -116,7 +113,6 @@ mod test {
 
     use super::*;
     use tokio::test;
-    use tokio::time::sleep;
 
     #[test]
     async fn test_start_new_session() {
