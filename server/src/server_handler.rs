@@ -1,5 +1,9 @@
 use anyhow::{anyhow, Result};
-use common::{error::ServerError, id::ID, messages::Response};
+use common::{
+    error::ServerError,
+    id::ID,
+    messages::{Message, Response},
+};
 use mongodb::{
     bson::{doc, oid::ObjectId},
     Client, Collection, Database,
@@ -19,22 +23,17 @@ struct ServerConfig {
 pub struct ServerHandler;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-struct Message {
-    content: String,
-    author: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct Block {
+    _id: u64,
     messages: Vec<Message>,
     time_stamp: SystemTime,
     filled: bool,
 }
 
-
 impl Block {
-    fn new() -> Self {
+    fn new(id: u64) -> Self {
         Self {
+            _id: id,
             messages: Vec::new(),
             time_stamp: SystemTime::now(),
             filled: false,
@@ -67,12 +66,6 @@ impl ServerConfig {
             admins,
             users,
         }
-    }
-}
-
-impl Message {
-    pub fn new(content: String, author: String) -> Self {
-        Self { content, author }
     }
 }
 
@@ -215,6 +208,8 @@ impl ServerHandler {
         Ok(Response::ChannelList(channel_response))
     }
 
+    ///add a message to a non filled block or create a new block in the channel, given that the
+    ///user has the required priviledges to write messages
     pub async fn send_message(
         client: &Client,
         server_id: &ID,
@@ -253,19 +248,53 @@ impl ServerHandler {
                 .find_one_and_replace(doc! {"filled": false}, block, None)
                 .await?;
         } else {
-            let mut block = Block::new();
+            //first block gets 0, second 1, ..., k-ter block gets k-1
+            let id = channel.count_documents(None, None).await?;
+            let mut block = Block::new(id);
             block.add_message(message);
             channel.insert_one(block, None).await?;
         };
 
         Ok(Response::Success)
     }
+
+    ///find a message block in the database and return it if the user has the required priviledges
+    pub async fn get_block_content(
+        client: &Client,
+        server_id: &ID,
+        channel_name: &String,
+        user_id: &ID,
+        block_id: u32,
+    ) -> Result<Response> {
+        let server = client.database(&server_id.id);
+        let conf_coll: Collection<ServerConfig> = server.collection("config");
+        let conf_opt = conf_coll.find_one(None, None).await?;
+
+        if conf_opt.is_none() {
+            return Ok(Response::Error(ServerError::BadRequest));
+        }
+        if !conf_opt.expect("checked above").users.contains(user_id) {
+            return Ok(Response::Error(ServerError::PermissionDenied));
+        }
+        if !server
+            .list_collection_names(None)
+            .await?
+            .contains(channel_name)
+        {
+            return Ok(Response::Error(ServerError::BadRequest));
+        }
+
+        let channel: Collection<Block> = server.collection(channel_name);
+        if let Some(block) = channel.find_one(doc! {"_id": block_id}, None).await? {
+            Ok(Response::MessagesFound(block.messages))
+        } else {
+            Ok(Response::EndOfChannel)
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::mpsc::channel;
-
     use crate::mongodb::connect_mongo;
     use tokio::test;
 
@@ -416,7 +445,7 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let channel = db.collection("TEST_CHANNEL");
-        let mut block = Block::new();
+        let mut block = Block::new(0);
         block.add_message(Message::new(
             "starting...".to_string(),
             "SERVER".to_string(),
@@ -453,7 +482,7 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let mut channel = db.collection("TEST_CHANNEL1");
-        let mut block = Block::new();
+        let mut block = Block::new(0);
         block.add_message(Message::new(
             "starting...".to_string(),
             "SERVER".to_string(),
@@ -493,7 +522,7 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let channel = db.collection("TEST_CHANNEL1");
-        let mut block = Block::new();
+        let mut block = Block::new(0);
         block.add_message(Message::new(
             "starting...".to_string(),
             "SERVER".to_string(),
@@ -515,8 +544,54 @@ mod test {
         .succeeded());
 
         block.add_message(Message::new(content, author));
-        let blk: Block = channel.find_one(doc! {"filled": false}, None).await.unwrap().unwrap();
+        let blk: Block = channel
+            .find_one(doc! {"filled": false}, None)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(blk, block);
+        db.drop(None).await.unwrap();
+    }
+
+    #[test]
+    async fn test_get_block_content(){
+        let user_id = ID {
+            id: "123123123123123123123123".to_string(),
+        };
+        let client = connect_mongo(None).await.unwrap();
+        let server_id = ID {
+            id: "12012918412412412777715a".to_string(),
+        };
+        let db = client.database(&server_id.id);
+        db.drop(None).await.unwrap();
+        let conf_coll: Collection<ServerConfig> = db.collection("config");
+        let conf = ServerConfig::new("TEST SERVER8".to_string(), user_id.clone());
+        conf_coll.insert_one(conf, None).await.unwrap();
+
+        let channel: Collection<Block> = db.collection("TEST_CHANNEL1");
+        let mut block = Block::new(0);
+        let m = Message::new(
+            "starting...".to_string(),
+            "SERVER".to_string(),
+        );
+        block.add_message(m);
+        channel.insert_one(&block, None).await.unwrap();
+
+        let m = Message::new(
+            "starting...".to_string(),
+            "SERVER".to_string(),
+        );
+        let resp = ServerHandler::get_block_content(&client, &server_id, &"TEST_CHANNEL1".to_string(), &user_id, 0).await.unwrap();
+        match resp {
+            Response::MessagesFound(messages) => {
+                assert_eq!(messages.len(), 1);
+                assert_eq!(messages[0], m);
+            }
+            other => {
+                db.drop(None).await.unwrap();
+                panic!("unexpected enum variant: {:?}", other)
+            }
+        }
         db.drop(None).await.unwrap();
     }
 }

@@ -145,6 +145,7 @@ impl Handler {
         ServerHandler::get_channels(mongo_client, server_id, &user_id).await
     }
 
+    ///send a message to the channel if the user is authenticated and has the required priviledges
     pub async fn send_message(
         &self,
         mongo_client: &Client,
@@ -159,6 +160,23 @@ impl Handler {
         }
         let username = self.user_handler.get_user(oid).await?.expect("checked above").username;
         ServerHandler::send_message(mongo_client,  server_id, &channel_name, &user_id, message_content, username).await
+    }
+
+    ///get a block of messages from a channel if the user is authenticated and has the required
+    ///priviledges. The block is uniquely identified by its id
+    pub async fn get_message_block(
+        &self, 
+        mongo_client: &Client,
+        user_id: ID,
+        server_id: &ID,
+        channel_name: String,
+        block_id: u32,
+    ) -> Result<Response> {
+        if !self.is_authenticated(user_id.clone()).await? {
+            let oid = ObjectId::parse_str(user_id.id.clone())?;
+            return self.session_handler.check_session_active(oid).await;
+        }
+        ServerHandler::get_block_content(mongo_client, server_id, &channel_name, &user_id, block_id).await
     }
 }
 

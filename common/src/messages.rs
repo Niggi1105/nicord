@@ -18,9 +18,9 @@ pub enum RequestType {
     DeleteChannel(ID, String),
     GetChannels(ID),
     SendMessage(ID, String, String), //ServerId, Channelname, Message
+    GetMessages(ID, String, u32), //ServerId, Channelname, block id
     /*
     SendMessage(Message),
-    GetMessages(ChannelId),
     GetFriends,
     AddFriend(UserId),*/
 }
@@ -38,7 +38,21 @@ pub enum Response {
     SessionCreated(ID),
     ServerCreated(ID),
     ChannelList(Vec<String>),
+    MessagesFound(Vec<Message>),
+    EndOfChannel,
     Success,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Message {
+    pub content: String,
+    pub author: String,
+}
+
+impl Message {
+    pub fn new(content: String, author: String) -> Self {
+        Self { content, author }
+    }
 }
 
 impl Response {

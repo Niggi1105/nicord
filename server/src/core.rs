@@ -73,6 +73,12 @@ async fn process_request(
             }
         }
 
+        RequestType::GetMessages(server_id, channel_name, block_nr) => match request.session_cookie{
+            None => Response::Error(ServerError::PermissionDenied),
+            Some(cookie) => {
+                handler.get_message_block(&mongo_client, cookie, &server_id, channel_name, block_nr).await?
+            }
+        }
     })
 }
 
@@ -116,8 +122,12 @@ pub async fn accept_new_connections(mongo_client: Client, handler: Handler) -> R
 mod test {
     use tokio::test;
 
+    use crate::mongodb::connect_mongo;
+
     #[test]
     async fn happy_path_server_creation_and_deletion(){
-
+        let client = connect_mongo(None).await.unwrap();
+        let server_name = "TEST_SERVER".to_string();
+        
     }
 }
