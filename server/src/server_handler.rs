@@ -375,7 +375,7 @@ mod test {
         conf_coll.insert_one(conf, None).await.unwrap();
 
         let resp =
-            ServerHandler::new_channel(&user_id, &client, &"TEST_CHANNEL".to_string(), &server_id)
+            ServerHandler::new_channel(&user_id, &client, &"TEST_CHANNEL123".to_string(), &server_id)
                 .await
                 .unwrap();
         match resp {
@@ -383,8 +383,10 @@ mod test {
             other => panic!("unexpected enum variant: {:?}", other),
         }
 
-        let channel: Collection<Message> = db.collection("TEST_CHANNEL");
-        let message = channel.find_one(None, None).await.unwrap().unwrap();
+        let channel: Collection<Block> = db.collection("TEST_CHANNEL123");
+        let block = channel.find_one(None, None).await.unwrap().unwrap();
+        assert_eq!(1, block.messages.len());
+        let message = &block.messages[0];
         assert_eq!(message.content, "channel created...");
         db.drop(None).await.unwrap();
         assert_eq!(message.author, "SERVER");
